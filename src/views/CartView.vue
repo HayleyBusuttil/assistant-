@@ -2,7 +2,7 @@
   <section class="page page-cart refined-layout">
     <div v-if="store.toast" class="toast" :class="`toast-${store.toast.type}`">
       <span>{{ store.toast.message }}</span>
-      <button type="button" @click="store.dismissToast()">×</button>
+      <button type="button" @click="store.dismissToast()">x</button>
     </div>
 
     <header class="shop-hero cart-hero">
@@ -50,17 +50,23 @@
             <div class="cart-item-meta">
               <span>Color: {{ line.color }}</span>
               <span>{{ formatEuro(line.product.price) }} each</span>
-              <span>{{ formatEuro(line.lineTotal) }} line total</span>
             </div>
 
-            <div class="quantity-stepper" aria-label="Quantity controls">
-              <button type="button" @click="store.updateCartQuantity(line.productId, line.color, line.quantity - 1)">
-                −
-              </button>
-              <span>{{ line.quantity }}</span>
-              <button type="button" @click="store.updateCartQuantity(line.productId, line.color, line.quantity + 1)">
-                +
-              </button>
+            <div class="cart-item-footer">
+              <div class="quantity-stepper" aria-label="Quantity controls">
+                <button type="button" @click="store.updateCartQuantity(line.productId, line.color, line.quantity - 1)">
+                  -
+                </button>
+                <span>{{ line.quantity }}</span>
+                <button type="button" @click="store.updateCartQuantity(line.productId, line.color, line.quantity + 1)">
+                  +
+                </button>
+              </div>
+
+              <div class="cart-item-total">
+                <span>Line total</span>
+                <strong>{{ formatEuro(line.lineTotal) }}</strong>
+              </div>
             </div>
           </div>
         </article>
@@ -134,7 +140,7 @@
                 <input type="radio" v-model="form.shippingMethod" value="standard" />
                 <span>
                   <strong>Standard delivery</strong>
-                  <small>3–5 working days · Free</small>
+                  <small>3-5 working days - Free</small>
                 </span>
               </label>
 
@@ -142,7 +148,7 @@
                 <input type="radio" v-model="form.shippingMethod" value="express" />
                 <span>
                   <strong>Express delivery</strong>
-                  <small>1–2 working days · €5.00</small>
+                  <small>1-2 working days - EUR5.00</small>
                 </span>
               </label>
             </div>
@@ -222,7 +228,7 @@
       <p class="eyebrow">Order confirmed</p>
       <h2>{{ order.id }}</h2>
       <p>
-        Thanks {{ order.name }} — this is a simulated checkout, so no payment was taken.
+        Thanks {{ order.name }} - this is a simulated checkout, so no payment was taken.
         Your order has been recorded and the cart has been cleared.
       </p>
       <RouterLink class="button button-soft" to="/shop">Continue shopping</RouterLink>

@@ -3,83 +3,34 @@
     <header class="assistant-header">
       <div>
         <p class="eyebrow">Assistant</p>
-        <h3>Helpful, optional guidance</h3>
+        <h3>Optional guidance</h3>
       </div>
       <button class="text-button" type="button" @click="closePanel">Close</button>
     </header>
 
     <div class="assistant-copy">
-      <p v-if="store.guidanceSuggestion">{{ store.guidanceSuggestion }}</p>
-      <p v-else>Not sure where to start? Try our best sellers or explore popular categories.</p>
-    </div>
-
-    <TooltipHint id="assistant-filter-tip" text="Tip: You can filter by category, collection, and price sorting here." :auto-hide="0" />
-
-    <div class="assistant-actions">
-      <button class="button-soft button-sm" type="button" @click="runDefaultTour">Show me recommendations</button>
-      <button class="button-soft button-sm" type="button" @click="pointToFilters">How to use filters</button>
-      <button class="button button-sm" type="button" @click="pointToAddToCart">Point to Add to Cart</button>
-    </div>
-
-    <div v-if="hasSequence" class="assistant-steps">
-      <p>
-        Step {{ currentStep + 1 }} / {{ steps.length }}:
-        <strong>Point me to {{ steps[currentStep].label }}</strong>
+      <p>{{ message }}</p>
+      <p v-if="contextTitle" class="assistant-context">
+        <strong>{{ contextTitle }}</strong>
       </p>
-      <div class="assistant-actions">
-        <button class="button-soft button-sm" type="button" :disabled="currentStep === 0" @click="store.previousSequence()">Previous</button>
-        <button class="button-soft button-sm" type="button" @click="store.advanceSequence()">Next</button>
-        <button class="button-sm button" type="button" @click="store.endSequence()">Finish</button>
-      </div>
+      <p v-if="recommendationEyebrow" class="assistant-note">
+        Showing: <strong>{{ recommendationEyebrow }}</strong>
+      </p>
     </div>
   </aside>
 </template>
 
 <script setup>
 import { computed } from "vue"
-import { useRoute, useRouter } from "vue-router"
-import TooltipHint from "./TooltipHint.vue"
 import { useProductStore } from "../stores/productStore"
 
 const store = useProductStore()
-const route = useRoute()
-const router = useRouter()
-
-const steps = computed(() => store.guidance?.sequence ?? [])
-const currentStep = computed(() => Number(store.guidance?.currentStep ?? 0))
-const hasSequence = computed(() => steps.value.length > 0)
+const message = computed(() => store.shopAssistantMessage)
+const recommendationEyebrow = computed(() => store.activeRecommendation?.eyebrow ?? "")
+const contextTitle = computed(() => store.activeGuidanceContext?.title ?? "")
 
 function closePanel() {
   store.closeAssistantPanel()
-}
-
-function runDefaultTour() {
-  const sequence = [
-    { target: "filters-bar", label: "filters" },
-    { target: "recommendation-section", label: "recommended products" },
-    { target: "compare-tray", label: "compare area" },
-  ]
-  store.startSequence(sequence)
-  if (route.path !== "/shop") {
-    router.push("/shop")
-  }
-}
-
-function pointToFilters() {
-  store.setHighlightTargets(["filters-bar"])
-  if (route.path !== "/shop") {
-    router.push("/shop")
-  }
-}
-
-function pointToAddToCart() {
-  store.setHighlightTargets(["add-to-cart"])
-  if (!route.path.startsWith("/product")) {
-    const firstId = store.filteredProducts?.[0]?.id ?? store.products?.[0]?.id
-    if (firstId) {
-      router.push(`/product/${firstId}`)
-    }
-  }
 }
 </script>
 
@@ -110,19 +61,16 @@ function pointToAddToCart() {
 
 .assistant-copy {
   color: var(--muted);
-  margin-bottom: 10px;
 }
 
-.assistant-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+.assistant-note {
   margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
 }
 
-.assistant-steps {
-  margin-top: 12px;
-  border-top: 1px solid var(--panel-border);
-  padding-top: 10px;
+.assistant-context {
+  margin: 12px 0 0;
+  color: var(--heading);
 }
 </style>

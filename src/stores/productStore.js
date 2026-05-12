@@ -2,8 +2,10 @@ import { defineStore } from "pinia"
 
 const storageKey = "guided-system-cart"
 const compareStorageKey = "guided-system-compare"
+const favoritesStorageKey = "guided-system-favorites"
 const eventStorageKey = "guided-system-events"
 const guidanceStorageKey = "guided-system-guidance"
+const recentlyViewedStorageKey = "guided-system-recently-viewed"
 
 const assetModules = import.meta.glob("../assets/**/*.jpg", {
   eager: true,
@@ -155,6 +157,7 @@ export const useProductStore = defineStore("products", {
     },
     cart: loadJSON(storageKey, []),
     comparison: loadJSON(compareStorageKey, []),
+    favorites: loadJSON(favoritesStorageKey, []),
     events: loadJSON(eventStorageKey, []),
     guidance: loadJSON(guidanceStorageKey, {
       enabled: false,
@@ -163,21 +166,35 @@ export const useProductStore = defineStore("products", {
       sequence: [],
       currentStep: 0,
       panelOpened: false,
+      activeContext: null,
+      dismissedContexts: {},
     }),
     lastOrder: null,
     toast: null,
     seenTips: loadJSON("guided-system-seen-tips", {}),
     interactions: loadJSON("guided-system-interactions", {}),
+    recentlyViewed: loadJSON(recentlyViewedStorageKey, []),
   }),
   getters: {
-    recommendedProducts: (state) => (category = null) => {
-      // simple heuristic: Featured badge or high rating or same category
-      const candidates = state.products.filter((p) => p.badge === "Featured" || p.rating >= 4.7)
-      if (category) {
-        return candidates.filter((p) => p.category === category).slice(0, 6)
-      }
+    recommendedProducts: (state) => (filters = {}) => {
+      const {
+        category = null,
+        collection = null,
+        excludeIds = [],
+        limit = 6,
+      } = filters
+      const excluded = new Set(excludeIds.map(String))
 
-      return candidates.slice(0, 6)
+      return state.products
+        .filter((product) => !excluded.has(product.id))
+        .filter((product) => !category || product.category === category)
+        .filter((product) => !collection || product.collection === collection)
+        .sort((left, right) => {
+          const leftScore = Number(left.featured) * 2 + left.rating
+          const rightScore = Number(right.featured) * 2 + right.rating
+          return rightScore - leftScore
+        })
+        .slice(0, limit)
     },
     productById: (state) => (id) => state.products.find((product) => product.id === String(id)),
     categories: (state) => ["All", ...new Set(state.products.map((product) => product.category))],
@@ -253,6 +270,11 @@ export const useProductStore = defineStore("products", {
         .map((id) => state.products.find((product) => product.id === id))
         .filter(Boolean)
     },
+    favoriteProducts(state) {
+      return state.favorites
+        .map((id) => state.products.find((product) => product.id === id))
+        .filter(Boolean)
+    },
     subtotal() {
       return Number(this.cartItems.reduce((sum, line) => sum + line.lineTotal, 0).toFixed(2))
     },
@@ -288,6 +310,211 @@ export const useProductStore = defineStore("products", {
       const steps = state.guidance?.sequence ?? []
       const index = Number(state.guidance?.currentStep ?? 0)
       return steps[index]?.label ?? null
+    },
+    activeRecommendation(state) {
+      const filters = state.filters
+
+      if (filters.category !== "All") {
+        const products = this.recommendedProducts({
+          category: filters.category,
+          collection: filters.collection !== "All" ? filters.collection : null,
+          limit: 4,
+        })
+
+        if (products.length) {
+          return {
+            eyebrow: "Popular in this category",
+            title: `Trending picks in ${filters.category}`,
+            helperText: "A few strong options surfaced from the category you are already exploring.",
+            label: "Popular",
+            products,
+          }
+        }
+      }
+
+      if (state.recentlyViewed.length) {
+        const recentIds = state.recentlyViewed.slice(0, 3)
+        const recentProducts = recentIds
+          .map((id) => state.products.find((product) => product.id === id))
+          .filter(Boolean)
+
+        const categories = [...new Set(recentProducts.map((product) => product.category))]
+        const collections = [...new Set(recentProducts.map((product) => product.collection))]
+
+        const products = state.products
+          .filter((product) => !recentIds.includes(product.id))
+          .filter((product) => categories.includes(product.category) || collections.includes(product.collection))
+          .sort((left, right) => right.rating - left.rating)
+          .slice(0, 4)
+
+        if (products.length) {
+          return {
+            eyebrow: "Recommended based on your selection",
+            title: "More styles aligned with what you viewed",
+            helperText: "Suggestions adapt as you browse products and collections.",
+            label: "Recommended",
+            products,
+          }
+        }
+      }
+
+      return null
+    },
+    shopAssistantMessage(state) {
+      const contextMessage = this.activeGuidanceMessage
+
+      if (contextMessage) {
+        return contextMessage
+      }
+
+      if (state.filters.category !== "All") {
+        return `Browsing stays open ended here. These suggestions simply highlight strong options in ${state.filters.category}.`
+      }
+
+      if (state.recentlyViewed.length) {
+        return "Recommendations update quietly from the products you open, so you can keep exploring at your own pace."
+      }
+
+      return "Use search, filters, or any product grid path you like. Assistance only appears when it has something relevant to add."
+    },
+    activeGuidanceMessage(state) {
+      const context = this.activeGuidanceContext
+      return context?.message ?? null
+    },
+    activeGuidanceContext(state) {
+      const contextId = state.guidance?.activeContext
+
+      if (!contextId) {
+        return null
+      }
+
+      const contexts = this.guidanceContexts
+      return contexts.find((context) => context.id === contextId) ?? null
+    },
+    guidanceContexts(state) {
+      const cartCount = state.cart.reduce((count, line) => count + line.quantity, 0)
+      const recentViews = state.recentlyViewed.length
+      const activeCategory = state.filters.category !== "All" ? state.filters.category : null
+      const hasFilterFocus =
+        Boolean(state.filters.search.trim()) ||
+        state.filters.category !== "All" ||
+        state.filters.collection !== "All" ||
+        state.filters.sort !== "featured"
+
+      return [
+        {
+          id: "filters-entry",
+          target: "filters-bar",
+          tone: "tip",
+          title: "Try narrowing the grid",
+          message: "Use search, category, and sort together to quickly cut down similar options.",
+          helper: "Filters never lock you in. Reset returns the full collection anytime.",
+          actionLabel: "Highlight filters",
+          event: "filters_prompt",
+          visible: !hasFilterFocus && !recentViews,
+        },
+        {
+          id: "compare-entry",
+          target: "compare-button",
+          tone: "tip",
+          title: "Compare side-by-side",
+          message: "Select up to two products to line up price, rating, and stock before deciding.",
+          helper: "You can save one now and add a second later.",
+          actionLabel: "Highlight compare",
+          event: "compare_prompt",
+          visible: state.comparison.length === 0 && recentViews >= 1,
+        },
+        {
+          id: "compare-active",
+          target: "compare-tray",
+          tone: "did-you-know",
+          title: "Your comparison stays ready",
+          message: "The compare tray keeps selected products visible while you continue browsing.",
+          helper: "Add one more product to unlock the side-by-side table.",
+          actionLabel: "Focus compare tray",
+          event: "compare_tray_prompt",
+          visible: state.comparison.length === 1,
+        },
+        {
+          id: "recommendations-discovery",
+          target: "recommendation-section",
+          tone: "did-you-know",
+          title: "Recommendations adapt quietly",
+          message: "Recommended items update from the categories and products you explore.",
+          helper: "They are suggestions only, so you can ignore them and keep browsing freely.",
+          actionLabel: "Highlight recommendations",
+          event: "recommendation_prompt",
+          visible: Boolean(this.activeRecommendation) && recentViews >= 2,
+        },
+        {
+          id: "undecided-nudge",
+          target: "recommendation-section",
+          tone: "assistant",
+          title: "Need a nudge?",
+          message: "You have been exploring similar items. Comparing two or scanning recommendations may make differences clearer.",
+          helper: "This appears only when the system thinks you may be weighing options.",
+          actionLabel: "Show decision tools",
+          event: "undecided_prompt",
+          visible: recentViews >= 3 && state.comparison.length === 0,
+        },
+        {
+          id: "favorites-discovery",
+          target: "favorite-button",
+          tone: "tip",
+          title: "Save favourites for later",
+          message: "Use the heart to keep promising products handy while you compare or continue exploring.",
+          helper: "Saved items stay lightweight and do not affect your cart.",
+          actionLabel: "Highlight favourites",
+          event: "favorites_prompt",
+          visible: recentViews >= 1 && state.favorites.length === 0,
+        },
+        {
+          id: "customization-discovery",
+          target: "product-buybox",
+          tone: "tip",
+          title: "Customize before adding",
+          message: "Color, size, and quantity options let you tailor the product without leaving the page.",
+          helper: "Selections stay simple so shoppers can experiment without committing.",
+          actionLabel: "Highlight options",
+          event: "customization_prompt",
+          visible: recentViews >= 1,
+        },
+        {
+          id: "wishlist-reassurance",
+          target: "product-buybox",
+          tone: "assistant",
+          title: "Still deciding is fine",
+          message: cartCount > 0
+            ? "You can add to cart, compare, or save to favourites depending on how ready you feel."
+            : "You can save this item, compare it, or customize it first. Nothing here forces a next step.",
+          helper: "Guidance stays optional so the shopping flow remains exploratory.",
+          actionLabel: "Show options",
+          event: "decision_reassurance",
+          visible: recentViews >= 2,
+        },
+        {
+          id: "favorites-followup",
+          target: "favorite-button",
+          tone: "did-you-know",
+          title: "Favourites are building your shortlist",
+          message: `You have ${state.favorites.length} saved ${state.favorites.length === 1 ? "item" : "items"} ready to revisit.`,
+          helper: "Use them as a lightweight shortlist before you compare or buy.",
+          actionLabel: "Highlight favourites",
+          event: "favorites_followup",
+          visible: state.favorites.length > 0,
+        },
+        {
+          id: "category-confidence",
+          target: "recommendation-section",
+          tone: "assistant",
+          title: `Popular picks in ${activeCategory}`,
+          message: `These suggestions reflect the ${activeCategory} section you are already exploring.`,
+          helper: "They help surface strong options without changing your current browsing path.",
+          actionLabel: "Highlight recommendations",
+          event: "category_recommendation_prompt",
+          visible: Boolean(activeCategory) && Boolean(this.activeRecommendation),
+        },
+      ]
     },
   },
   actions: {
@@ -407,6 +634,7 @@ export const useProductStore = defineStore("products", {
 
       persistJSON(compareStorageKey, this.comparison)
       this.trackEvent("toggle_compare", { productId, selected: this.comparison.includes(productId) })
+      this.setContextualGuidance(this.comparison.length === 1 ? "compare-active" : null)
     },
     clearComparison() {
       this.comparison = []
@@ -451,7 +679,14 @@ export const useProductStore = defineStore("products", {
       this.showToast(this.guidance.enabled ? "Guidance enabled" : "Guidance disabled", "neutral")
     },
     openAssistantPanel() {
-      this.guidance = { ...(this.guidance || {}), enabled: true, panelOpened: true }
+      this.guidance = {
+        ...(this.guidance || {}),
+        enabled: true,
+        panelOpened: true,
+        sequence: [],
+        currentStep: 0,
+        highlightTargets: [],
+      }
       persistJSON(guidanceStorageKey, this.guidance)
       this.trackEvent("open_assistant_panel")
     },
@@ -471,6 +706,37 @@ export const useProductStore = defineStore("products", {
       this.guidance = { ...(this.guidance || {}), level }
       persistJSON(guidanceStorageKey, this.guidance)
       this.trackEvent("set_guidance_level", { level })
+    },
+    setContextualGuidance(contextId = null) {
+      if ((this.guidance?.activeContext ?? null) === contextId) {
+        return
+      }
+
+      this.guidance = {
+        ...(this.guidance || {}),
+        enabled: true,
+        activeContext: contextId,
+      }
+      persistJSON(guidanceStorageKey, this.guidance)
+
+      if (contextId) {
+        this.trackEvent("set_contextual_guidance", { contextId })
+      }
+    },
+    dismissContextualGuidance(contextId) {
+      this.guidance = {
+        ...(this.guidance || {}),
+        activeContext: this.guidance?.activeContext === contextId ? null : this.guidance?.activeContext ?? null,
+        dismissedContexts: {
+          ...(this.guidance?.dismissedContexts || {}),
+          [contextId]: true,
+        },
+      }
+      persistJSON(guidanceStorageKey, this.guidance)
+      this.trackEvent("dismiss_contextual_guidance", { contextId })
+    },
+    hasDismissedContext(contextId) {
+      return Boolean(this.guidance?.dismissedContexts?.[contextId])
     },
     setHighlightTargets(targets = []) {
       this.guidance = { ...(this.guidance || {}), highlightTargets: targets }
@@ -541,6 +807,50 @@ export const useProductStore = defineStore("products", {
       this.interactions = { ...(this.interactions || {}), [now]: { name, payload } }
       persistJSON("guided-system-interactions", this.interactions)
       this.trackEvent("interaction", { name, payload })
+    },
+    toggleFavorite(productId) {
+      const normalizedId = String(productId)
+      const product = this.products.find((item) => item.id === normalizedId)
+
+      if (!product) {
+        return
+      }
+
+      if (this.favorites.includes(normalizedId)) {
+        this.favorites = this.favorites.filter((id) => id !== normalizedId)
+        this.showToast(`${product.name} removed from favourites`, "neutral")
+      } else {
+        this.favorites = [normalizedId, ...this.favorites].slice(0, 24)
+        this.showToast(`${product.name} saved to favourites`)
+      }
+
+      persistJSON(favoritesStorageKey, this.favorites)
+      this.trackEvent("toggle_favorite", { productId: normalizedId, saved: this.favorites.includes(normalizedId) })
+    },
+    maybeShowContextualGuidance(preferredContextIds = []) {
+      const available = this.guidanceContexts.filter(
+        (context) => context.visible && !this.hasDismissedContext(context.id),
+      )
+
+      if (!available.length) {
+        return
+      }
+
+      const preferred = preferredContextIds
+        .map((id) => available.find((context) => context.id === id))
+        .filter(Boolean)
+
+      const nextContext = preferred[0] ?? available[0]
+      this.setContextualGuidance(nextContext.id)
+    },
+    registerProductView(productId) {
+      const normalizedId = String(productId)
+      this.recentlyViewed = [
+        normalizedId,
+        ...this.recentlyViewed.filter((id) => id !== normalizedId),
+      ].slice(0, 8)
+      persistJSON(recentlyViewedStorageKey, this.recentlyViewed)
+      this.trackInteraction("viewed_product", { productId: normalizedId })
     },
   },
 })

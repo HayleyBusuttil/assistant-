@@ -1,6 +1,6 @@
 <template>
   <div class="help-panel">
-    <button v-if="!store.guidance?.enabled" class="help-launch" @click="openAssistant">Need help</button>
+    <button v-if="!store.guidance?.enabled" class="help-launch" @click="openAssistant">Optional help</button>
   </div>
 </template>
 

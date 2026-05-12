@@ -1,5 +1,5 @@
 <template>
-  <section class="recommendation-section">
+  <section v-if="products.length" class="recommendation-section">
     <div class="section-heading">
       <div>
         <p class="eyebrow">{{ eyebrow }}</p>
@@ -15,6 +15,7 @@
         :product="item"
         :is-compared="comparison.includes(item.id)"
         :compare-disabled="comparison.length >= 2"
+        :recommendation-label="productLabel"
         @quick-add="emit('quick-add', item.id)"
         @compare="emit('compare', item.id)"
       />
@@ -31,6 +32,7 @@ defineProps({
   helperText: { type: String, default: "" },
   products: { type: Array, default: () => [] },
   comparison: { type: Array, default: () => [] },
+  productLabel: { type: String, default: "Recommended" },
 })
 
 const emit = defineEmits(["quick-add", "compare"])

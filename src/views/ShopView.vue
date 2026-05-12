@@ -12,7 +12,6 @@
         <p class="lead">
           Browse, filter, compare, and explore products designed for everyday wear.
         </p>
-        <TooltipHint id="shop-entry-tip" text="Not sure where to start? Try our best sellers and featured picks." />
       </div>
 
       <div class="hero-stats">
@@ -57,6 +56,11 @@
         Reset
       </button>
     </section>
+
+    <ContextualGuidance
+      v-if="showFiltersGuidance"
+      context-id="filters-entry"
+    />
 
     <section
       v-if="store.comparisonProducts.length"
@@ -103,6 +107,11 @@
       <button type="button" class="button-soft button-sm" @click="store.clearComparison()">
         Clear comparison
       </button>
+
+      <ContextualGuidance
+        v-if="store.activeGuidanceContext?.id === 'compare-active'"
+        context-id="compare-active"
+      />
     </section>
 
     <section
@@ -115,6 +124,18 @@
           <h2>{{ store.filteredProducts.length }} results</h2>
         </div>
         <p>Select up to two products to compare them before opening the product page.</p>
+      </div>
+
+      <div class="discoverability-row">
+        <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('compare-button') }">
+          Compare two items side-by-side
+        </span>
+        <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('favorite-button') }">
+          Save favourites as a shortlist
+        </span>
+        <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('recommendation-section') }">
+          Recommendations adapt while you browse
+        </span>
       </div>
 
       <div v-if="store.filteredProducts.length" class="product-grid">
@@ -160,23 +181,20 @@
     </section>
 
     <RecommendationSection
-      eyebrow="Get started"
-      title="Not sure where to start? Try our best sellers"
-      helper-text="Popular picks selected from current catalog performance"
-      :products="bestSellers"
+      v-if="activeRecommendation"
+      :eyebrow="activeRecommendation.eyebrow"
+      :title="activeRecommendation.title"
+      :helper-text="activeRecommendation.helperText"
+      :product-label="activeRecommendation.label"
+      :products="activeRecommendation.products"
       :comparison="store.comparison"
       @quick-add="store.addToCart"
       @compare="store.toggleComparison"
     />
 
-    <RecommendationSection
-      eyebrow="Customers also viewed"
-      title="Explore popular categories"
-      helper-text="These suggestions help when you are still browsing options"
-      :products="customersAlsoViewed"
-      :comparison="store.comparison"
-      @quick-add="store.addToCart"
-      @compare="store.toggleComparison"
+    <ContextualGuidance
+      v-if="showRecommendationGuidance"
+      :context-id="store.activeGuidanceContext?.id"
     />
 
     <AssistantPanel />
@@ -192,7 +210,7 @@ import HelpPanel from "../components/HelpPanel.vue"
 import AssistantPanel from "../components/AssistantPanel.vue"
 import RecommendationSection from "../components/RecommendationSection.vue"
 import EmptyStateHelper from "../components/EmptyStateHelper.vue"
-import TooltipHint from "../components/TooltipHint.vue"
+import ContextualGuidance from "../components/ContextualGuidance.vue"
 
 const store = useProductStore()
 const productsPerPage = 12
@@ -204,8 +222,13 @@ const collection = ref(store.filters.collection)
 const sort = ref(store.filters.sort)
 
 const availableCollections = computed(() => store.collections(category.value))
-const bestSellers = computed(() => store.recommendedProducts(category.value).slice(0, 4))
-const customersAlsoViewed = computed(() => store.recommendedProducts("All").slice(2, 6))
+const activeRecommendation = computed(() => store.activeRecommendation)
+const showFiltersGuidance = computed(() => store.activeGuidanceContext?.id === "filters-entry")
+const showRecommendationGuidance = computed(() =>
+  ["compare-entry", "recommendations-discovery", "undecided-nudge", "favorites-discovery", "category-confidence"].includes(
+    store.activeGuidanceContext?.id ?? "",
+  ),
+)
 
 let timeout = null
 
@@ -231,6 +254,21 @@ watch(sort, (value) => {
   store.setSort(value)
   currentPage.value = 1
 })
+
+watch(
+  () => [store.filteredProducts.length, store.comparison.length, store.favorites.length, store.recentlyViewed.length, activeRecommendation.value?.title],
+  () => {
+    store.maybeShowContextualGuidance([
+      "compare-active",
+      "recommendations-discovery",
+      "undecided-nudge",
+      "favorites-discovery",
+      "category-confidence",
+      "filters-entry",
+    ])
+  },
+  { immediate: true },
+)
 
 const totalPages = computed(() => Math.max(1, Math.ceil(store.filteredProducts.length / productsPerPage)))
 

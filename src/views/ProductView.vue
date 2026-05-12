@@ -15,22 +15,8 @@
 
     <div class="product-detail-layout">
       <div class="product-visual">
-        <img :src="selectedImage" :alt="product.name" loading="eager" decoding="async" fetchpriority="high" />
+        <img :src="product.image" :alt="product.name" loading="eager" decoding="async" fetchpriority="high" />
         <span class="product-chip">{{ product.badge }}</span>
-
-        <div class="product-gallery" v-if="galleryImages.length > 1">
-          <button
-            v-for="image in galleryImages"
-            :key="image"
-            class="gallery-thumb"
-            :class="{ active: image === selectedImage }"
-            type="button"
-            @click="selectedImage = image"
-            :aria-label="`Preview ${product.name}`"
-          >
-            <img :src="image" :alt="product.name" loading="lazy" decoding="async" />
-          </button>
-        </div>
       </div>
 
       <aside class="product-buybox" :class="{ 'highlighted-guidance': store.guidance?.highlightTargets?.includes('product-buybox') }">
@@ -48,8 +34,6 @@
           <span>{{ product.reviews }} reviews</span>
           <span>{{ product.stock }} left</span>
         </div>
-        <TooltipHint :id="`trend-tip-${product.id}`" text="This item is trending this week." />
-
         <div class="selection-panel">
           <label class="input-group">
             <span>Color</span>
@@ -96,10 +80,24 @@
           <button
             class="button button-soft"
             type="button"
-            :class="{ active: store.comparison.includes(product.id) }"
+            :class="{
+              active: store.comparison.includes(product.id),
+              'highlighted-guidance': store.guidance?.highlightTargets?.includes('compare-button'),
+            }"
             @click="store.toggleComparison(product.id)"
           >
             {{ store.comparison.includes(product.id) ? "Remove comparison" : "Compare item" }}
+          </button>
+          <button
+            class="button button-ghost product-favorite-button"
+            type="button"
+            :class="{
+              active: store.favorites.includes(product.id),
+              'highlighted-guidance': store.guidance?.highlightTargets?.includes('favorite-button'),
+            }"
+            @click="toggleFavorite"
+          >
+            {{ store.favorites.includes(product.id) ? "Saved to favourites" : "Save to favourites" }}
           </button>
           <RouterLink class="button button-soft" to="/cart">Go to cart</RouterLink>
         </div>
@@ -107,6 +105,12 @@
         <p class="support-copy">
           Free shipping over €180 and a 30-day return policy. This page gives shoppers enough context to move from browsing into buying.
         </p>
+
+        <ContextualGuidance
+          v-if="showBuyboxGuidance"
+          :context-id="store.activeGuidanceContext?.id"
+          :show-highlight="store.activeGuidanceContext?.target !== 'product-buybox'"
+        />
       </aside>
     </div>
 
@@ -132,9 +136,11 @@
     </section>
 
     <RecommendationSection
-      eyebrow="You may also like"
-      title="Related products"
-      helper-text="These styles are close to what you are viewing"
+      v-if="relatedProducts.length"
+      eyebrow="Recommended based on your selection"
+      title="Similar products worth exploring"
+      helper-text="Related styles stay available while you browse this item."
+      product-label="Recommended"
       :products="relatedProducts"
       :comparison="store.comparison"
       @quick-add="store.addToCart"
@@ -142,10 +148,12 @@
     />
 
     <RecommendationSection
-      eyebrow="Complete the outfit"
-      title="Complementary picks"
-      helper-text="Customers also viewed these with similar products"
-      :products="complementaryProducts"
+      v-if="alsoViewedProducts.length"
+      eyebrow="Users also viewed"
+      title="Recently explored alongside this product"
+      helper-text="A lightweight trail based on browsing behaviour, not a required next step."
+      product-label="Also viewed"
+      :products="alsoViewedProducts"
       :comparison="store.comparison"
       @quick-add="store.addToCart"
       @compare="store.toggleComparison"
@@ -171,7 +179,7 @@ import { useProductStore } from "../stores/productStore"
 import HelpPanel from "../components/HelpPanel.vue"
 import AssistantPanel from "../components/AssistantPanel.vue"
 import RecommendationSection from "../components/RecommendationSection.vue"
-import TooltipHint from "../components/TooltipHint.vue"
+import ContextualGuidance from "../components/ContextualGuidance.vue"
 
 const route = useRoute()
 const store = useProductStore()
@@ -181,57 +189,54 @@ const sizes = ["XS", "S", "M", "L", "XL"]
 const quantity = ref(1)
 const selectedColor = ref("")
 const selectedSize = ref("M")
-const selectedImage = ref("")
-
-const galleryImages = computed(() => {
-  if (!product.value) {
-    return []
-  }
-
-  const siblings = store.products
-    .filter((item) => item.collection === product.value.collection)
-    .map((item) => item.image)
-
-  return [...new Set([product.value.image, ...siblings])].slice(0, 5)
-})
 
 watch(
   product,
   (value) => {
     selectedColor.value = value?.colors?.[0] ?? ""
     selectedSize.value = "M"
-    selectedImage.value = value?.image ?? ""
     quantity.value = 1
 
     if (value) {
       store.trackEvent("view_product", { productId: value.id })
+      store.registerProductView(value.id)
+      store.maybeShowContextualGuidance([
+        "customization-discovery",
+        "wishlist-reassurance",
+        "favorites-followup",
+        "compare-entry",
+      ])
     }
   },
   { immediate: true },
 )
 
-watch(galleryImages, (images) => {
-  if (!images.length) {
-    return
-  }
-
-  if (!images.includes(selectedImage.value)) {
-    selectedImage.value = images[0]
-  }
-})
-
 const relatedProducts = computed(() =>
-  store.products
-    .filter((item) => item.id !== product.value?.id && item.category === product.value?.category)
-    .slice(0, 3),
+  store.recommendedProducts({
+    category: product.value?.category ?? null,
+    collection: product.value?.collection ?? null,
+    excludeIds: product.value ? [product.value.id] : [],
+    limit: 4,
+  }),
 )
 
-const complementaryProducts = computed(() => {
-  if (!product.value) return []
-  return store.products
-    .filter((item) => item.id !== product.value.id && item.category !== product.value.category)
-    .slice(0, 3)
+const alsoViewedProducts = computed(() => {
+  if (!product.value) {
+    return []
+  }
+
+  return store.recentlyViewed
+    .filter((id) => id !== product.value.id)
+    .map((id) => store.productById(id))
+    .filter(Boolean)
+    .slice(0, 4)
 })
+
+const showBuyboxGuidance = computed(() =>
+  ["compare-entry", "customization-discovery", "wishlist-reassurance", "favorites-followup"].includes(
+    store.activeGuidanceContext?.id ?? "",
+  ),
+)
 
 function addToCart() {
   if (!product.value) {
@@ -239,6 +244,15 @@ function addToCart() {
   }
 
   store.addToCart(product.value.id, quantity.value, selectedColor.value)
+}
+
+function toggleFavorite() {
+  if (!product.value) {
+    return
+  }
+
+  store.toggleFavorite(product.value.id)
+  store.maybeShowContextualGuidance(["favorites-followup", "wishlist-reassurance"])
 }
 
 function increaseQuantity() {
