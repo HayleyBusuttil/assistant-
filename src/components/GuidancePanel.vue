@@ -60,14 +60,6 @@ function changeLevel() {
   store.setGuidanceLevel(level.value)
 }
 
-function focusFilters() {
-  // navigate to shop and highlight the filters section briefly
-  router.push({ path: '/shop', query: { focus: 'filters' } })
-  store.setHighlightTargets(['filters-bar'])
-  // clear highlight after 6s
-  setTimeout(() => store.clearHighlightTargets(), 6000)
-}
-
 function startDefaultTour() {
   const defaultSequence = [
     { target: 'filters-bar', label: 'filters' },

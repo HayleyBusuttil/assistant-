@@ -367,13 +367,6 @@ img {
   transform: translateY(-3px);
 }
 
-.category-card-button {
-  width: 100%;
-  border: 1px solid var(--panel-border);
-  text-align: left;
-  cursor: pointer;
-}
-
 .filters-bar {
   display: flex;
   align-items: flex-end;
@@ -664,12 +657,6 @@ img {
 .section-heading p {
   color: var(--muted);
   max-width: 52ch;
-}
-
-.recommendation-card-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 14px;
 }
 
 .product-grid,
