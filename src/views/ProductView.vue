@@ -86,18 +86,7 @@
             }"
             @click="store.toggleComparison(product.id)"
           >
-            {{ store.comparison.includes(product.id) ? "Remove comparison" : "Compare item" }}
-          </button>
-          <button
-            class="button button-ghost product-favorite-button"
-            type="button"
-            :class="{
-              active: store.favorites.includes(product.id),
-              'highlighted-guidance': store.guidance?.highlightTargets?.includes('favorite-button'),
-            }"
-            @click="toggleFavorite"
-          >
-            {{ store.favorites.includes(product.id) ? "Saved to favourites" : "Save to favourites" }}
+            {{ store.comparison.includes(product.id) ? "Comparing now" : "Compare item" }}
           </button>
           <RouterLink class="button button-soft" to="/cart">Go to cart</RouterLink>
         </div>
@@ -137,10 +126,10 @@
 
     <RecommendationSection
       v-if="relatedProducts.length"
-      eyebrow="Recommended based on your selection"
-      title="Similar products worth exploring"
-      helper-text="Related styles stay available while you browse this item."
-      product-label="Recommended"
+      eyebrow="Because of this product"
+      title="Similar options with a close fit"
+      helper-text="These suggestions prioritize the same category, then look for closer collection and price matches."
+      product-label="Why this fits"
       :products="relatedProducts"
       :comparison="store.comparison"
       @quick-add="store.addToCart"
@@ -152,7 +141,7 @@
       eyebrow="Users also viewed"
       title="Recently explored alongside this product"
       helper-text="A lightweight trail based on browsing behaviour, not a required next step."
-      product-label="Also viewed"
+      product-label="Browsing trail"
       :products="alsoViewedProducts"
       :comparison="store.comparison"
       @quick-add="store.addToCart"
@@ -203,7 +192,6 @@ watch(
       store.maybeShowContextualGuidance([
         "customization-discovery",
         "wishlist-reassurance",
-        "favorites-followup",
         "compare-entry",
       ])
     }
@@ -212,9 +200,9 @@ watch(
 )
 
 const relatedProducts = computed(() =>
-  store.recommendedProducts({
+  store.personalizedRecommendations({
+    anchorProductId: product.value?.id ?? null,
     category: product.value?.category ?? null,
-    collection: product.value?.collection ?? null,
     excludeIds: product.value ? [product.value.id] : [],
     limit: 4,
   }),
@@ -233,7 +221,7 @@ const alsoViewedProducts = computed(() => {
 })
 
 const showBuyboxGuidance = computed(() =>
-  ["compare-entry", "customization-discovery", "wishlist-reassurance", "favorites-followup"].includes(
+  ["compare-entry", "customization-discovery", "wishlist-reassurance"].includes(
     store.activeGuidanceContext?.id ?? "",
   ),
 )
@@ -244,15 +232,6 @@ function addToCart() {
   }
 
   store.addToCart(product.value.id, quantity.value, selectedColor.value)
-}
-
-function toggleFavorite() {
-  if (!product.value) {
-    return
-  }
-
-  store.toggleFavorite(product.value.id)
-  store.maybeShowContextualGuidance(["favorites-followup", "wishlist-reassurance"])
 }
 
 function increaseQuantity() {

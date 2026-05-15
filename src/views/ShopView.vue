@@ -64,6 +64,8 @@
 
     <section
       v-if="store.comparisonProducts.length"
+      id="comparison-section"
+      ref="comparisonSection"
       class="compare-tray"
       :class="{ 'highlighted-guidance': store.guidance?.highlightTargets?.includes('compare-tray') }"
     >
@@ -120,18 +122,15 @@
     >
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Featured results</p>
+          <p class="eyebrow">Browse results</p>
           <h2>{{ store.filteredProducts.length }} results</h2>
         </div>
-        <p>Select up to two products to compare them before opening the product page.</p>
+        <p>Compare two items side-by-side and let recommendations react to the signals you create while browsing.</p>
       </div>
 
       <div class="discoverability-row">
         <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('compare-button') }">
           Compare two items side-by-side
-        </span>
-        <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('favorite-button') }">
-          Save favourites as a shortlist
         </span>
         <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('recommendation-section') }">
           Recommendations adapt while you browse
@@ -203,7 +202,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import { useProductStore } from "../stores/productStore"
 import ProductCard from "../components/ProductCard.vue"
 import HelpPanel from "../components/HelpPanel.vue"
@@ -215,6 +214,7 @@ import ContextualGuidance from "../components/ContextualGuidance.vue"
 const store = useProductStore()
 const productsPerPage = 12
 const currentPage = ref(1)
+const comparisonSection = ref(null)
 
 const search = ref(store.filters.search)
 const category = ref(store.filters.category)
@@ -225,7 +225,7 @@ const availableCollections = computed(() => store.collections(category.value))
 const activeRecommendation = computed(() => store.activeRecommendation)
 const showFiltersGuidance = computed(() => store.activeGuidanceContext?.id === "filters-entry")
 const showRecommendationGuidance = computed(() =>
-  ["compare-entry", "recommendations-discovery", "undecided-nudge", "favorites-discovery", "category-confidence"].includes(
+  ["compare-entry", "recommendations-discovery", "undecided-nudge", "category-confidence"].includes(
     store.activeGuidanceContext?.id ?? "",
   ),
 )
@@ -256,18 +256,27 @@ watch(sort, (value) => {
 })
 
 watch(
-  () => [store.filteredProducts.length, store.comparison.length, store.favorites.length, store.recentlyViewed.length, activeRecommendation.value?.title],
+  () => [store.filteredProducts.length, store.comparison.length, store.recentlyViewed.length, activeRecommendation.value?.title],
   () => {
     store.maybeShowContextualGuidance([
       "compare-active",
       "recommendations-discovery",
       "undecided-nudge",
-      "favorites-discovery",
       "category-confidence",
       "filters-entry",
     ])
   },
   { immediate: true },
+)
+
+watch(
+  () => store.comparison.length,
+  async (length, previousLength) => {
+    if (length === 2 && previousLength !== 2) {
+      await nextTick()
+      comparisonSection.value?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  },
 )
 
 const totalPages = computed(() => Math.max(1, Math.ceil(store.filteredProducts.length / productsPerPage)))

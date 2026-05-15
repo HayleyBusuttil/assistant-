@@ -16,6 +16,7 @@
         :is-compared="comparison.includes(item.id)"
         :compare-disabled="comparison.length >= 2"
         :recommendation-label="productLabel"
+        :recommendation-reason="item.recommendationReason"
         @quick-add="emit('quick-add', item.id)"
         @compare="emit('compare', item.id)"
       />

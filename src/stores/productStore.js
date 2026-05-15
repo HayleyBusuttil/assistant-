@@ -50,6 +50,14 @@ const collectionColors = {
   "Women Formal": ["Bone", "Mocha", "Onyx"],
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function buildReason(label, detail) {
+  return detail ? `${label}: ${detail}` : label
+}
+
 function humanize(value) {
   return value
     .replace(/([a-z])([A-Z])/g, "$1 $2")
@@ -196,6 +204,110 @@ export const useProductStore = defineStore("products", {
         })
         .slice(0, limit)
     },
+    personalizedRecommendations: (state) => (options = {}) => {
+      const {
+        anchorProductId = null,
+        category = null,
+        collection = null,
+        excludeIds = [],
+        limit = 4,
+      } = options
+      const excluded = new Set(excludeIds.map(String))
+      const recentIds = state.recentlyViewed.map(String)
+      const comparisonIds = state.comparison.map(String)
+      const anchorProduct = anchorProductId
+        ? state.products.find((product) => product.id === String(anchorProductId))
+        : null
+
+      const signalProducts = [
+        ...recentIds.map((id) => state.products.find((product) => product.id === id)),
+        ...comparisonIds.map((id) => state.products.find((product) => product.id === id)),
+      ].filter(Boolean)
+
+      const averageSignalPrice = signalProducts.length
+        ? signalProducts.reduce((sum, product) => sum + product.price, 0) / signalProducts.length
+        : null
+
+      return state.products
+        .filter((product) => !excluded.has(product.id))
+        .filter((product) => !category || product.category === category)
+        .filter((product) => !collection || product.collection === collection)
+        .map((product) => {
+          let score = product.rating * 8 + Number(product.featured) * 6
+          const reasons = []
+
+          const recentIndex = recentIds.indexOf(product.id)
+          if (recentIndex >= 0) {
+            score += Math.max(14 - recentIndex * 3, 4)
+            reasons.push(buildReason("You viewed this recently", "it may be worth a second look"))
+          }
+
+          if (comparisonIds.includes(product.id)) {
+            score += 16
+            reasons.push(buildReason("In your comparison tray", "it is already part of your decision set"))
+          }
+
+          if (anchorProduct) {
+            if (product.category === anchorProduct.category) {
+              score += 14
+            }
+
+            if (product.collection === anchorProduct.collection) {
+              score += 18
+              reasons.push(buildReason("Same collection", anchorProduct.collection))
+            } else if (product.category === anchorProduct.category) {
+              reasons.push(buildReason("Same category", anchorProduct.category))
+            }
+
+            const priceGap = Math.abs(product.price - anchorProduct.price)
+            const priceFit = clamp(1 - priceGap / 60, 0, 1)
+            if (priceFit > 0) {
+              score += priceFit * 12
+              if (priceGap <= 18) {
+                reasons.push(buildReason("Close in price", `within €${priceGap.toFixed(0)} of what you viewed`))
+              }
+            }
+          } else if (averageSignalPrice !== null) {
+            const priceGap = Math.abs(product.price - averageSignalPrice)
+            const priceFit = clamp(1 - priceGap / 80, 0, 1)
+            if (priceFit > 0) {
+              score += priceFit * 10
+              if (priceGap <= 20) {
+                reasons.push(buildReason("Aligned with your browsing range", `near €${Math.round(averageSignalPrice)}`))
+              }
+            }
+          }
+
+          if (!anchorProduct && recentIds.length) {
+            const relatedRecentProduct = recentIds
+              .map((id) => state.products.find((item) => item.id === id))
+              .find((item) => item && (item.collection === product.collection || item.category === product.category))
+
+            if (relatedRecentProduct) {
+              score += relatedRecentProduct.collection === product.collection ? 12 : 8
+              reasons.push(
+                relatedRecentProduct.collection === product.collection
+                  ? buildReason("Matches what you explored", relatedRecentProduct.collection)
+                  : buildReason("Matches what you explored", relatedRecentProduct.category),
+              )
+            }
+          }
+
+          return {
+            ...product,
+            recommendationReason:
+              reasons[0] ??
+              buildReason(
+                product.featured ? "Strong overall pick" : "Well-rated option",
+                product.featured ? "editorially featured in the catalogue" : `${product.rating.toFixed(1)} rating`,
+              ),
+            recommendationReasons: reasons,
+            recommendationScore: score,
+          }
+        })
+        .sort((left, right) => right.recommendationScore - left.recommendationScore)
+        .slice(0, limit)
+    },
     productById: (state) => (id) => state.products.find((product) => product.id === String(id)),
     categories: (state) => ["All", ...new Set(state.products.map((product) => product.category))],
     collections: (state) => (category = "All") => {
@@ -315,7 +427,7 @@ export const useProductStore = defineStore("products", {
       const filters = state.filters
 
       if (filters.category !== "All") {
-        const products = this.recommendedProducts({
+        const products = this.personalizedRecommendations({
           category: filters.category,
           collection: filters.collection !== "All" ? filters.collection : null,
           limit: 4,
@@ -323,10 +435,10 @@ export const useProductStore = defineStore("products", {
 
         if (products.length) {
           return {
-            eyebrow: "Popular in this category",
-            title: `Trending picks in ${filters.category}`,
-            helperText: "A few strong options surfaced from the category you are already exploring.",
-            label: "Popular",
+            eyebrow: "Matched to your current browse",
+            title: `Best fits in ${filters.category}`,
+            helperText: "These picks combine your current filter focus with recent browsing, comparison choices, and price-fit signals.",
+            label: "Why this fits",
             products,
           }
         }
@@ -341,18 +453,17 @@ export const useProductStore = defineStore("products", {
         const categories = [...new Set(recentProducts.map((product) => product.category))]
         const collections = [...new Set(recentProducts.map((product) => product.collection))]
 
-        const products = state.products
-          .filter((product) => !recentIds.includes(product.id))
-          .filter((product) => categories.includes(product.category) || collections.includes(product.collection))
-          .sort((left, right) => right.rating - left.rating)
-          .slice(0, 4)
+        const products = this.personalizedRecommendations({
+          excludeIds: recentIds,
+          limit: 4,
+        }).filter((product) => categories.includes(product.category) || collections.includes(product.collection))
 
         if (products.length) {
           return {
-            eyebrow: "Recommended based on your selection",
-            title: "More styles aligned with what you viewed",
-            helperText: "Suggestions adapt as you browse products and collections.",
-            label: "Recommended",
+            eyebrow: "Based on what you explored",
+            title: "More styles that fit your browsing pattern",
+            helperText: "Recommendations are shaped by the products you opened, comparison choices, and the price range you seem to prefer.",
+            label: "Why this fits",
             products,
           }
         }
@@ -458,17 +569,6 @@ export const useProductStore = defineStore("products", {
           visible: recentViews >= 3 && state.comparison.length === 0,
         },
         {
-          id: "favorites-discovery",
-          target: "favorite-button",
-          tone: "tip",
-          title: "Save favourites for later",
-          message: "Use the heart to keep promising products handy while you compare or continue exploring.",
-          helper: "Saved items stay lightweight and do not affect your cart.",
-          actionLabel: "Highlight favourites",
-          event: "favorites_prompt",
-          visible: recentViews >= 1 && state.favorites.length === 0,
-        },
-        {
           id: "customization-discovery",
           target: "product-buybox",
           tone: "tip",
@@ -478,30 +578,6 @@ export const useProductStore = defineStore("products", {
           actionLabel: "Highlight options",
           event: "customization_prompt",
           visible: recentViews >= 1,
-        },
-        {
-          id: "wishlist-reassurance",
-          target: "product-buybox",
-          tone: "assistant",
-          title: "Still deciding is fine",
-          message: cartCount > 0
-            ? "You can add to cart, compare, or save to favourites depending on how ready you feel."
-            : "You can save this item, compare it, or customize it first. Nothing here forces a next step.",
-          helper: "Guidance stays optional so the shopping flow remains exploratory.",
-          actionLabel: "Show options",
-          event: "decision_reassurance",
-          visible: recentViews >= 2,
-        },
-        {
-          id: "favorites-followup",
-          target: "favorite-button",
-          tone: "did-you-know",
-          title: "Favourites are building your shortlist",
-          message: `You have ${state.favorites.length} saved ${state.favorites.length === 1 ? "item" : "items"} ready to revisit.`,
-          helper: "Use them as a lightweight shortlist before you compare or buy.",
-          actionLabel: "Highlight favourites",
-          event: "favorites_followup",
-          visible: state.favorites.length > 0,
         },
         {
           id: "category-confidence",
