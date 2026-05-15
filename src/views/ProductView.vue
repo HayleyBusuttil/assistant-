@@ -1,10 +1,5 @@
 <template>
   <section v-if="product" class="page page-product">
-    <div v-if="store.toast" class="toast" :class="`toast-${store.toast.type}`">
-      <span>{{ store.toast.message }}</span>
-      <button type="button" @click="store.dismissToast()">×</button>
-    </div>
-
     <nav class="breadcrumbs">
       <RouterLink to="/shop">Shop</RouterLink>
       <span>/</span>
@@ -124,7 +119,8 @@
       </article>
     </section>
 
-    <RecommendationSection
+    <section id="similar-products-section">
+      <RecommendationSection
       v-if="relatedProducts.length"
       eyebrow="Because of this product"
       title="Similar options with a close fit"
@@ -135,6 +131,21 @@
       @quick-add="store.addToCart"
       @compare="store.toggleComparison"
     />
+    </section>
+
+    <section id="complete-look-section">
+      <RecommendationSection
+      v-if="showCompleteLookCard && matchingProducts.length"
+      eyebrow="Complete the look"
+      title="Matching items for your selection"
+      helper-text="Complementary items appear here after you add this product to the cart."
+      product-label="Matching item"
+      :products="matchingProducts"
+      :comparison="store.comparison"
+      @quick-add="store.addToCart"
+      @compare="store.toggleComparison"
+    />
+    </section>
 
     <RecommendationSection
       v-if="alsoViewedProducts.length"
@@ -190,7 +201,7 @@ watch(
       store.trackEvent("view_product", { productId: value.id })
       store.registerProductView(value.id)
       store.maybeShowContextualGuidance([
-        "customization-discovery",
+        "add-to-cart-prompt",
         "wishlist-reassurance",
         "compare-entry",
       ])
@@ -220,8 +231,33 @@ const alsoViewedProducts = computed(() => {
     .slice(0, 4)
 })
 
+const matchingProducts = computed(() => {
+  if (!product.value) {
+    return []
+  }
+
+  const complementaryMap = {
+    Dresses: ["Shoes", "Shirts"],
+    Pants: ["Shirts", "Shoes"],
+    Shirts: ["Pants", "Shoes"],
+    Shoes: ["Pants", "Dresses"],
+  }
+
+  const complementaryCategories = complementaryMap[product.value.category] ?? []
+
+  return store.personalizedRecommendations({
+    anchorProductId: product.value.id,
+    excludeIds: [product.value.id, ...store.cart.map((line) => line.productId)],
+    limit: 4,
+  }).filter((item) => complementaryCategories.includes(item.category))
+})
+
+const showCompleteLookCard = computed(() =>
+  Boolean(product.value) && store.cart.some((line) => line.productId === product.value.id) && matchingProducts.value.length > 0,
+)
+
 const showBuyboxGuidance = computed(() =>
-  ["compare-entry", "customization-discovery", "wishlist-reassurance"].includes(
+  ["compare-entry", "add-to-cart-prompt", "wishlist-reassurance"].includes(
     store.activeGuidanceContext?.id ?? "",
   ),
 )
@@ -246,3 +282,4 @@ function decreaseQuantity() {
   quantity.value = Math.max(1, quantity.value - 1)
 }
 </script>
+

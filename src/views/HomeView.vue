@@ -54,12 +54,17 @@
         <p>The simulated checkout keeps the experience coherent from first click to order summary.</p>
       </article>
     </section>
+
+    <AssistantPanel />
+    <HelpPanel />
   </section>
 </template>
 
 <script setup>
 import { useProductStore } from "../stores/productStore"
 import ProductCard from "../components/ProductCard.vue"
+import AssistantPanel from "../components/AssistantPanel.vue"
+import HelpPanel from "../components/HelpPanel.vue"
 
 const store = useProductStore()
 </script>

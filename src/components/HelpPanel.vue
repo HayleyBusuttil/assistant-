@@ -1,6 +1,9 @@
 <template>
   <div class="help-panel">
-    <button v-if="!store.guidance?.enabled" class="help-launch" @click="openAssistant">Optional help</button>
+    <button v-if="!store.guidance?.enabled" class="help-launch" @click="openAssistant">
+      <span class="help-launch-icon" aria-hidden="true">i</span>
+      <span>Optional help</span>
+    </button>
   </div>
 </template>
 
@@ -23,6 +26,9 @@ function openAssistant() {
   z-index: 1300;
 }
 .help-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   background: linear-gradient(135deg, var(--accent) 0%, #5ca18f 100%);
   color: #fff;
   border: 0;
@@ -31,5 +37,18 @@ function openAssistant() {
   font-weight: 700;
   box-shadow: 0 14px 36px rgba(35,45,68,0.14);
   cursor: pointer;
+}
+
+.help-launch-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1;
 }
 </style>

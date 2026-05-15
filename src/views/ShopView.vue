@@ -1,10 +1,5 @@
 <template>
   <section class="page page-shop refined-layout">
-    <div v-if="store.toast" class="toast" :class="`toast-${store.toast.type}`">
-      <span>{{ store.toast.message }}</span>
-      <button type="button" @click="store.dismissToast()">×</button>
-    </div>
-
     <header class="shop-hero">
       <div>
         <p class="eyebrow">Shop</p>
@@ -22,35 +17,48 @@
     </header>
 
     <section
+      id="filters-bar"
       class="filters-bar"
       aria-label="Product filters"
       :class="{ 'highlighted-guidance': store.guidance?.highlightTargets?.includes('filters-bar') }"
     >
-      <input
-        v-model="search"
-        type="search"
-        placeholder="Search products..."
-        class="search-input"
-      />
+      <label class="input-group">
+        <span>Search products</span>
+        <input
+          v-model="search"
+          type="search"
+          placeholder="Search products..."
+          class="search-input"
+        />
+      </label>
 
-      <select v-model="category" aria-label="Category">
-        <option v-for="item in store.categories" :key="item" :value="item">
-          {{ item }}
-        </option>
-      </select>
+      <label class="input-group">
+        <span>Filter by category</span>
+        <select v-model="category" aria-label="Category">
+          <option v-for="item in store.categories" :key="item" :value="item">
+            {{ item }}
+          </option>
+        </select>
+      </label>
 
-      <select v-model="collection" aria-label="Collection">
-        <option v-for="item in availableCollections" :key="item" :value="item">
-          {{ item }}
-        </option>
-      </select>
+      <label class="input-group">
+        <span>Filter by collection</span>
+        <select v-model="collection" aria-label="Collection">
+          <option v-for="item in availableCollections" :key="item" :value="item">
+            {{ item }}
+          </option>
+        </select>
+      </label>
 
-      <select v-model="sort" aria-label="Sort products">
-        <option value="featured">Featured</option>
-        <option value="newest">Newest</option>
-        <option value="price-asc">Price ↑</option>
-        <option value="price-desc">Price ↓</option>
-      </select>
+      <label class="input-group">
+        <span>Sort results</span>
+        <select v-model="sort" aria-label="Sort products">
+          <option value="featured">Featured</option>
+          <option value="newest">Newest</option>
+          <option value="price-asc">Price ↑</option>
+          <option value="price-desc">Price ↓</option>
+        </select>
+      </label>
 
       <button type="button" @click="store.resetFilters()" class="reset-btn">
         Reset
@@ -75,22 +83,39 @@
       </div>
 
       <div class="compare-items">
-        <article v-for="item in store.comparisonProducts" :key="item.id" class="compare-mini-card">
+        <RouterLink
+          v-for="item in store.comparisonProducts"
+          :key="item.id"
+          :to="`/product/${item.id}`"
+          class="compare-mini-card"
+        >
           <img :src="item.image" :alt="item.name" loading="lazy" decoding="async" />
-          <div>
+          <div class="compare-mini-copy">
             <strong>{{ item.name }}</strong>
             <span>{{ item.category }} · €{{ item.price }}</span>
           </div>
-          <button type="button" class="text-button" @click="store.toggleComparison(item.id)">
-            Remove
-          </button>
-        </article>
+          <div class="compare-mini-actions">
+            <button type="button" class="button-ghost button-sm" @click.stop.prevent="store.addToCart(item.id)">
+              Add to cart
+            </button>
+            <button type="button" class="button-ghost button-sm" @click.stop.prevent="store.toggleComparison(item.id)">
+              Remove
+            </button>
+          </div>
+        </RouterLink>
       </div>
 
       <div v-if="store.comparisonProducts.length === 2" class="comparison-table">
         <div class="comparison-row header">
           <span>Feature</span>
-          <strong v-for="item in store.comparisonProducts" :key="item.id">{{ item.name }}</strong>
+          <RouterLink
+            v-for="item in store.comparisonProducts"
+            :key="item.id"
+            :to="`/product/${item.id}`"
+            class="comparison-product-link"
+          >
+            {{ item.name }}
+          </RouterLink>
         </div>
         <div class="comparison-row">
           <span>Price</span>
@@ -117,6 +142,7 @@
     </section>
 
     <section
+      id="recommendation-section"
       class="products-section recommendation-section"
       :class="{ 'highlighted-guidance': store.guidance?.highlightTargets?.includes('recommendation-section') }"
     >
@@ -125,15 +151,15 @@
           <p class="eyebrow">Browse results</p>
           <h2>{{ store.filteredProducts.length }} results</h2>
         </div>
-        <p>Compare two items side-by-side and let recommendations react to the signals you create while browsing.</p>
+        <p>The support rail below adapts as your browsing becomes more focused, more comparative, or more decision-oriented.</p>
       </div>
 
       <div class="discoverability-row">
         <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('compare-button') }">
-          Compare two items side-by-side
+          Compare similar items
         </span>
         <span class="discoverability-pill" :class="{ emphasized: store.guidance?.highlightTargets?.includes('recommendation-section') }">
-          Recommendations adapt while you browse
+          Context-aware guidance
         </span>
       </div>
 
@@ -185,6 +211,7 @@
       :title="activeRecommendation.title"
       :helper-text="activeRecommendation.helperText"
       :product-label="activeRecommendation.label"
+      :signals="activeRecommendation.signals ?? []"
       :products="activeRecommendation.products"
       :comparison="store.comparison"
       @quick-add="store.addToCart"
@@ -202,7 +229,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useProductStore } from "../stores/productStore"
 import ProductCard from "../components/ProductCard.vue"
 import HelpPanel from "../components/HelpPanel.vue"
@@ -223,9 +250,11 @@ const sort = ref(store.filters.sort)
 
 const availableCollections = computed(() => store.collections(category.value))
 const activeRecommendation = computed(() => store.activeRecommendation)
-const showFiltersGuidance = computed(() => store.activeGuidanceContext?.id === "filters-entry")
+const showFiltersGuidance = computed(() =>
+  ["landing-welcome", "filters-entry"].includes(store.activeGuidanceContext?.id ?? ""),
+)
 const showRecommendationGuidance = computed(() =>
-  ["compare-entry", "recommendations-discovery", "undecided-nudge", "category-confidence"].includes(
+  ["compare-entry", "recommendations-discovery", "undecided-nudge", "category-confidence", "discovery-nudge"].includes(
     store.activeGuidanceContext?.id ?? "",
   ),
 )
@@ -256,9 +285,11 @@ watch(sort, (value) => {
 })
 
 watch(
-  () => [store.filteredProducts.length, store.comparison.length, store.recentlyViewed.length, activeRecommendation.value?.title],
+  () => [store.filteredProducts.length, store.comparison.length, store.cartCount, store.recentlyViewed.length, activeRecommendation.value?.title],
   () => {
     store.maybeShowContextualGuidance([
+      "landing-welcome",
+      "discovery-nudge",
       "compare-active",
       "recommendations-discovery",
       "undecided-nudge",
@@ -328,9 +359,29 @@ watch(
     }
   },
 )
+
+function handleShopScroll() {
+  if (window.scrollY > 960) {
+    store.markShopLongScroll()
+    store.maybeShowContextualGuidance(["discovery-nudge"])
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("scroll", handleShopScroll, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener("scroll", handleShopScroll)
+})
 </script>
 
 <style scoped>
 /* keep empty - styles live in global style.css */
 </style>
+
+
+
+
+
 

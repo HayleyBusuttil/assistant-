@@ -8,6 +8,12 @@
       <p v-if="helperText" class="recommendation-helper">{{ helperText }}</p>
     </div>
 
+    <div v-if="signals.length" class="recommendation-signals" aria-label="Recommendation cues">
+      <span v-for="signal in signals" :key="signal" class="recommendation-signal">
+        {{ signal }}
+      </span>
+    </div>
+
     <div class="product-grid related-grid">
       <ProductCard
         v-for="item in products"
@@ -34,6 +40,7 @@ defineProps({
   products: { type: Array, default: () => [] },
   comparison: { type: Array, default: () => [] },
   productLabel: { type: String, default: "Recommended" },
+  signals: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(["quick-add", "compare"])
@@ -47,4 +54,22 @@ const emit = defineEmits(["quick-add", "compare"])
 .recommendation-helper {
   color: var(--muted);
 }
+
+.recommendation-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 18px;
+}
+
+.recommendation-signal {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(47, 79, 103, 0.12);
+  background: rgba(47, 79, 103, 0.05);
+  color: var(--heading);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 </style>

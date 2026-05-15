@@ -1,10 +1,5 @@
 <template>
   <section class="page page-cart refined-layout">
-    <div v-if="store.toast" class="toast" :class="`toast-${store.toast.type}`">
-      <span>{{ store.toast.message }}</span>
-      <button type="button" @click="store.dismissToast()">x</button>
-    </div>
-
     <header class="shop-hero cart-hero">
       <div>
         <p class="eyebrow">Cart</p>
@@ -72,7 +67,7 @@
         </article>
       </section>
 
-      <aside class="checkout-panel">
+      <aside id="checkout-panel" class="checkout-panel">
         <div class="summary-card cart-section">
           <p class="eyebrow">Order summary</p>
 
@@ -97,7 +92,7 @@
           </div>
         </div>
 
-        <form class="checkout-flow" @submit.prevent="completeCheckout">
+        <form id="checkout-flow" class="checkout-flow" @submit.prevent="completeCheckout">
           <section class="checkout-section">
             <div class="checkout-section-heading">
               <div>
@@ -224,6 +219,11 @@
       <RouterLink class="button" to="/shop">Browse products</RouterLink>
     </div>
 
+    <ContextualGuidance
+      v-if="showCartGuidance"
+      :context-id="store.activeGuidanceContext?.id"
+    />
+
     <section v-if="order" class="order-confirmation">
       <p class="eyebrow">Order confirmed</p>
       <h2>{{ order.id }}</h2>
@@ -233,12 +233,18 @@
       </p>
       <RouterLink class="button button-soft" to="/shop">Continue shopping</RouterLink>
     </section>
+
+    <AssistantPanel />
+    <HelpPanel />
   </section>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue"
+import { computed, reactive, ref, watch } from "vue"
 import { useProductStore } from "../stores/productStore"
+import ContextualGuidance from "../components/ContextualGuidance.vue"
+import AssistantPanel from "../components/AssistantPanel.vue"
+import HelpPanel from "../components/HelpPanel.vue"
 
 const store = useProductStore()
 const order = ref(store.lastOrder)
@@ -273,6 +279,15 @@ const cartSummaryText = computed(() => {
 const deliveryComplete = computed(() => Boolean(form.name && form.email && form.address))
 const paymentComplete = computed(() => Boolean(form.cardNumber && form.expiry && form.cvv))
 const checkoutReady = computed(() => deliveryComplete.value && paymentComplete.value)
+const showCartGuidance = computed(() => store.activeGuidanceContext?.id === "cart-shipping-nudge")
+
+watch(
+  () => [store.cartCount, store.subtotal, deliveryComplete.value, paymentComplete.value],
+  () => {
+    store.maybeShowContextualGuidance(["cart-shipping-nudge"])
+  },
+  { immediate: true },
+)
 
 function completeCheckout() {
   if (!checkoutReady.value) {
@@ -302,4 +317,6 @@ function completeCheckout() {
 function formatEuro(value) {
   return euroFormatter.format(value)
 }
+
 </script>
+

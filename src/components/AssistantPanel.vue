@@ -10,27 +10,146 @@
 
     <div class="assistant-copy">
       <p>{{ message }}</p>
-      <p v-if="contextTitle" class="assistant-context">
-        <strong>{{ contextTitle }}</strong>
-      </p>
-      <p v-if="recommendationEyebrow" class="assistant-note">
-        Showing: <strong>{{ recommendationEyebrow }}</strong>
-      </p>
+    </div>
+
+    <div v-if="assistantCards.length" class="assistant-recommendations" aria-label="Assistant recommendations">
+      <RecommendationCard
+        v-for="card in assistantCards"
+        :key="`${route.path}-${card.title}`"
+        :title="card.title"
+        :description="card.description"
+        :icon="card.icon"
+        :cta-label="card.ctaLabel"
+        @activate="handleCard(card.action)"
+      />
     </div>
   </aside>
 </template>
 
 <script setup>
 import { computed } from "vue"
+import { useRoute } from "vue-router"
 import { useProductStore } from "../stores/productStore"
+import RecommendationCard from "./RecommendationCard.vue"
 
 const store = useProductStore()
+const route = useRoute()
 const message = computed(() => store.shopAssistantMessage)
-const recommendationEyebrow = computed(() => store.activeRecommendation?.eyebrow ?? "")
-const contextTitle = computed(() => store.activeGuidanceContext?.title ?? "")
+const assistantCards = computed(() => {
+  if (route.path === "/shop") {
+    const cards = []
+
+    if (store.filteredProducts.length > 8) {
+      cards.push({
+        title: "Too many choices?",
+        description: "Try narrowing results using filters.",
+        icon: "filter",
+        ctaLabel: "Focus filters",
+        action: "assistant-filters",
+      })
+    }
+
+    if (store.comparisonProducts.length || store.recentlyViewed.length >= 2) {
+      cards.push({
+        title: "Compare similar styles",
+        description: "View related products before making your decision.",
+        icon: "compare",
+        ctaLabel: "Open comparison",
+        action: "assistant-compare",
+      })
+    }
+
+    return cards
+  }
+
+  if (route.path.startsWith("/product/")) {
+    const cards = []
+
+    if (document.getElementById("similar-products-section")) {
+      cards.push({
+        title: "Compare similar styles",
+        description: "View related products before making your decision.",
+        icon: "compare",
+        ctaLabel: "See similar products",
+        action: "assistant-similar-products",
+      })
+    }
+
+    const productId = String(route.params.id ?? "")
+    const inCart = store.cart.some((line) => line.productId === productId)
+    if (inCart && document.getElementById("complete-look-section")) {
+      cards.push({
+        title: "Complete the look",
+        description: "Discover matching items for your selection.",
+        icon: "pair",
+        ctaLabel: "View matching items",
+        action: "assistant-complete-look",
+      })
+    }
+
+    return cards
+  }
+
+  if (route.path === "/cart" && store.cartItems.length) {
+    return [
+      {
+        title: "Ready to checkout?",
+        description: "You're only one step away.",
+        icon: "checkout",
+        ctaLabel: "Go to checkout",
+        action: "assistant-checkout",
+      },
+    ]
+  }
+
+  return []
+})
 
 function closePanel() {
   store.closeAssistantPanel()
+}
+
+function handleCard(action) {
+  const actionMap = {
+    "assistant-filters": "filters-bar",
+    "assistant-compare": store.comparisonProducts.length ? "comparison-section" : "recommendation-section",
+    "assistant-similar-products": "similar-products-section",
+    "assistant-complete-look": "complete-look-section",
+    "assistant-checkout": "checkout-flow",
+  }
+
+  const highlightMap = {
+    "assistant-filters": "filters-bar",
+    "assistant-compare": store.comparisonProducts.length ? "compare-tray" : "compare-button",
+    "assistant-similar-products": "recommendation-section",
+    "assistant-complete-look": "recommendation-section",
+    "assistant-checkout": "checkout-panel",
+  }
+
+  const target = actionMap[action]
+  if (!target) {
+    return
+  }
+
+  document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" })
+
+  if (action === "assistant-filters") {
+    window.setTimeout(() => {
+      document.querySelector("#filters-bar input, #filters-bar select")?.focus()
+    }, 250)
+  }
+
+  const highlight = highlightMap[action]
+  if (!highlight) {
+    return
+  }
+
+  store.setHighlightTargets([highlight])
+  window.setTimeout(() => {
+    if (store.guidance?.highlightTargets?.includes(highlight)) {
+      store.clearHighlightTargets()
+    }
+  }, 5000)
 }
 </script>
 
@@ -39,7 +158,7 @@ function closePanel() {
   position: fixed;
   right: 20px;
   bottom: 22px;
-  width: min(420px, calc(100% - 32px));
+  width: min(360px, calc(100% - 32px));
   border-radius: 18px;
   border: 1px solid var(--panel-border);
   background: linear-gradient(180deg, var(--panel), var(--panel-strong));
@@ -63,14 +182,9 @@ function closePanel() {
   color: var(--muted);
 }
 
-.assistant-note {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--panel-border);
-}
-
-.assistant-context {
-  margin: 12px 0 0;
-  color: var(--heading);
+.assistant-recommendations {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
 }
 </style>

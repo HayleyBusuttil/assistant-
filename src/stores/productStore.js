@@ -1,4 +1,5 @@
 import { defineStore } from "pinia"
+import router from "../router"
 
 const storageKey = "guided-system-cart"
 const compareStorageKey = "guided-system-compare"
@@ -56,6 +57,17 @@ function clamp(value, min, max) {
 
 function buildReason(label, detail) {
   return detail ? `${label}: ${detail}` : label
+}
+
+function complementaryCategories(category) {
+  const map = {
+    Dresses: ["Shoes", "Shirts"],
+    Pants: ["Shirts", "Shoes"],
+    Shirts: ["Pants", "Shoes"],
+    Shoes: ["Pants", "Dresses"],
+  }
+
+  return map[category] ?? []
 }
 
 function humanize(value) {
@@ -182,6 +194,10 @@ export const useProductStore = defineStore("products", {
     seenTips: loadJSON("guided-system-seen-tips", {}),
     interactions: loadJSON("guided-system-interactions", {}),
     recentlyViewed: loadJSON(recentlyViewedStorageKey, []),
+    productViewCounts: {},
+    shopSignals: {
+      longScroll: false,
+    },
   }),
   getters: {
     recommendedProducts: (state) => (filters = {}) => {
@@ -423,49 +439,216 @@ export const useProductStore = defineStore("products", {
       const index = Number(state.guidance?.currentStep ?? 0)
       return steps[index]?.label ?? null
     },
+    revisitedProductIds(state) {
+      return Object.entries(state.productViewCounts)
+        .filter(([, count]) => count >= 2)
+        .map(([id]) => id)
+    },
+    taskJourneyStage(state) {
+      const hasSearch = Boolean(state.filters.search.trim())
+      const hasFilterFocus =
+        hasSearch ||
+        state.filters.category !== "All" ||
+        state.filters.collection !== "All" ||
+        state.filters.sort !== "featured"
+
+      if (this.cartCount > 0) {
+        return "checkout"
+      }
+
+      if (state.comparison.length >= 1) {
+        return "compare"
+      }
+
+      if (state.recentlyViewed.length >= 1) {
+        return "add-to-cart"
+      }
+
+      if (hasFilterFocus) {
+        return "find"
+      }
+
+      return "landing"
+    },
     activeRecommendation(state) {
       const filters = state.filters
+      const newestCartItem = this.cartItems[0]?.product ?? null
+      const recentViews = state.recentlyViewed
+        .map((id) => state.products.find((product) => product.id === id))
+        .filter(Boolean)
+      const hasSearch = Boolean(filters.search.trim())
 
-      if (filters.category !== "All") {
+      if (newestCartItem) {
+        const complementary = complementaryCategories(newestCartItem.category)
         const products = this.personalizedRecommendations({
-          category: filters.category,
-          collection: filters.collection !== "All" ? filters.collection : null,
+          excludeIds: [newestCartItem.id, ...state.cart.map((line) => line.productId)],
           limit: 4,
         })
+          .filter((product) => complementary.includes(product.category))
+          .map((product, index) => ({
+            ...product,
+            recommendationReason:
+              index === 0
+                ? buildReason("Complete the look", `pairs well with ${newestCartItem.category.toLowerCase()}`)
+                : buildReason("Matching item", product.category),
+          }))
 
         if (products.length) {
           return {
-            eyebrow: "Matched to your current browse",
-            title: `Best fits in ${filters.category}`,
-            helperText: "These picks combine your current filter focus with recent browsing, comparison choices, and price-fit signals.",
+            eyebrow: "Complete the look",
+            title: `Matching items for ${newestCartItem.name}`,
+            helperText: "A few complementary pieces that relate directly to the item you just added, with direct links into each product page.",
             label: "Why this fits",
+            signals: ["Matching item", "Related style", "Direct product link"],
+            links: [
+              { label: "Complete the look with these matching items.", action: "focus-recommendations", icon: "pair" },
+              { label: "You’re only one step away from checkout.", action: "go-to-checkout", icon: "checkout" },
+            ],
             products,
           }
         }
       }
 
-      if (state.recentlyViewed.length) {
-        const recentIds = state.recentlyViewed.slice(0, 3)
-        const recentProducts = recentIds
-          .map((id) => state.products.find((product) => product.id === id))
-          .filter(Boolean)
+      if (state.comparison.length === 2) {
+        const comparedProducts = this.comparisonProducts
+        const bestValueId = [...comparedProducts]
+          .sort((left, right) => (right.rating / right.price) - (left.rating / left.price))[0]?.id
+        const popularId = [...comparedProducts]
+          .sort((left, right) => right.reviews - left.reviews)[0]?.id
+        const comparedCategories = [...new Set(comparedProducts.map((product) => product.category))]
+        const comparedCollections = [...new Set(comparedProducts.map((product) => product.collection))]
+        const products = this.personalizedRecommendations({
+          excludeIds: state.comparison,
+          limit: 4,
+        })
+          .filter((product) =>
+            comparedCategories.includes(product.category) || comparedCollections.includes(product.collection),
+          )
+          .map((product, index) => ({
+            ...product,
+            recommendationReason:
+              index === 0
+                ? buildReason("Compare similar items", "close to what is already in your tray")
+                : product.id === bestValueId
+                  ? buildReason("Best value option", "strong rating for the price")
+                  : product.id === popularId
+                    ? buildReason("Most popular choice", `${product.reviews} recent reviews`)
+                    : buildReason("Customers also viewed", product.category),
+          }))
 
-        const categories = [...new Set(recentProducts.map((product) => product.category))]
-        const collections = [...new Set(recentProducts.map((product) => product.collection))]
+        if (products.length) {
+          return {
+            eyebrow: "Decision support",
+            title: "Helpful alternatives around your current shortlist",
+            helperText: "If your current comparison still feels close, these nearby options can make the final choice clearer.",
+            label: "Why this fits",
+            signals: ["Best value option", "Most popular choice", "Customers also viewed"],
+            links: [
+              { label: "Compare similar styles before making your decision.", action: "open-comparison", icon: "compare" },
+            ],
+            products,
+          }
+        }
+      }
+
+      if (filters.category !== "All" || hasSearch) {
+        const scopedTitle = hasSearch ? `Matches for “${filters.search.trim()}”` : `Best of ${filters.category}`
+        const products = this.personalizedRecommendations({
+          category: filters.category !== "All" ? filters.category : null,
+          collection: filters.collection !== "All" ? filters.collection : null,
+          limit: 4,
+        }).map((product, index) => ({
+          ...product,
+          recommendationReason:
+            index === 0
+              ? buildReason("Editor's pick", product.collection)
+              : product.featured
+                ? buildReason("Trending now", `${product.rating.toFixed(1)} rated`)
+                : buildReason(
+                    filters.category !== "All" ? "Popular in this category" : "Best for casual wear",
+                    product.category,
+                  ),
+        }))
+
+        if (products.length) {
+          return {
+            eyebrow: hasSearch ? "Refined for your search" : "Discovery support",
+            title: scopedTitle,
+            helperText: "These suggestions react to your filters and search cues to reduce scanning effort without pushing you into a fixed path.",
+            label: "Why this fits",
+            signals: hasSearch
+              ? ["Search match", "Trending now", "Popular in this category"]
+              : ["Editor's pick", "Trending now", "Best for casual wear"],
+            links: hasSearch
+              ? [
+                  { label: "Too many choices? Try narrowing results using filters.", action: "focus-filters", icon: "filter" },
+                ]
+              : [
+                  { label: "Not sure where to begin? Explore our most popular categories.", action: "focus-categories", icon: "categories" },
+                  { label: "Too many choices? Try narrowing results using filters.", action: "focus-filters", icon: "filter" },
+                ],
+            products,
+          }
+        }
+      }
+
+      if (recentViews.length) {
+        const recentIds = recentViews.slice(0, 3).map((product) => product.id)
+        const categories = [...new Set(recentViews.map((product) => product.category))]
+        const collections = [...new Set(recentViews.map((product) => product.collection))]
 
         const products = this.personalizedRecommendations({
           excludeIds: recentIds,
           limit: 4,
-        }).filter((product) => categories.includes(product.category) || collections.includes(product.collection))
+        })
+          .filter((product) => categories.includes(product.category) || collections.includes(product.collection))
+          .map((product, index) => ({
+            ...product,
+            recommendationReason:
+              index === 0
+                ? buildReason("Customers also viewed", product.collection)
+                : state.recentlyViewed.includes(product.id)
+                  ? buildReason("Worth a second look", product.category)
+                  : buildReason("Most popular choice", `${product.reviews} reviews`),
+          }))
 
         if (products.length) {
           return {
             eyebrow: "Based on what you explored",
-            title: "More styles that fit your browsing pattern",
-            helperText: "Recommendations are shaped by the products you opened, comparison choices, and the price range you seem to prefer.",
+            title: "A few stronger next options",
+            helperText: "These suggestions stay close to what you reopened or lingered on, which helps move browsing toward a clearer decision.",
             label: "Why this fits",
+            signals: ["Customers also viewed", "Most popular choice", "Worth a second look"],
+            links: [
+              { label: "Compare similar styles before making your decision.", action: "open-comparison", icon: "compare" },
+            ],
             products,
           }
+        }
+      }
+
+      if (!filters.category || filters.category === "All") {
+        const products = this.recommendedProducts({ limit: 4 }).map((product, index) => ({
+          ...product,
+          recommendationReason:
+            index === 0
+              ? buildReason("Editor's pick", "a strong place to begin")
+              : product.featured
+                ? buildReason("Trending now", product.category)
+                : buildReason("Popular category", product.category),
+        }))
+
+        return {
+          eyebrow: "A good place to begin",
+          title: "Start with a smaller, easier set",
+          helperText: "This first set is meant to lower search effort and give you a few credible starting points before you refine further.",
+          label: "Why this fits",
+          signals: ["Editor's pick", "Trending now", "Popular category"],
+          links: [
+            { label: "Not sure where to begin? Explore our most popular categories.", action: "focus-categories", icon: "categories" },
+            { label: "Too many choices? Try narrowing results using filters.", action: "focus-filters", icon: "filter" },
+          ],
+          products,
         }
       }
 
@@ -478,6 +661,22 @@ export const useProductStore = defineStore("products", {
         return contextMessage
       }
 
+      if (this.taskJourneyStage === "checkout") {
+        return "Your bag is ready. From this point, AURA focuses on reassurance and progress instead of suggesting more products."
+      }
+
+      if (this.taskJourneyStage === "compare") {
+        return "You are in decision mode now, so the guidance focuses on confidence cues like value, popularity, and fit with what you already viewed."
+      }
+
+      if (this.taskJourneyStage === "add-to-cart") {
+        return "Once a product starts to stand out, the guidance becomes lighter and focuses on helping you confirm the choice rather than distracting you."
+      }
+
+      if (this.taskJourneyStage === "find") {
+        return "AURA watches for signs that you are narrowing in, so the help can shift from broad discovery toward more targeted finding support."
+      }
+
       if (state.filters.category !== "All") {
         return `Browsing stays open ended here. These suggestions simply highlight strong options in ${state.filters.category}.`
       }
@@ -486,7 +685,7 @@ export const useProductStore = defineStore("products", {
         return "Recommendations update quietly from the products you open, so you can keep exploring at your own pace."
       }
 
-      return "Use search, filters, or any product grid path you like. Assistance only appears when it has something relevant to add."
+      return "Browse freely. The guidance layer is designed to appear only when it can reduce effort, uncertainty, or unnecessary back-and-forth."
     },
     activeGuidanceMessage(state) {
       const context = this.activeGuidanceContext
@@ -506,6 +705,8 @@ export const useProductStore = defineStore("products", {
       const cartCount = state.cart.reduce((count, line) => count + line.quantity, 0)
       const recentViews = state.recentlyViewed.length
       const activeCategory = state.filters.category !== "All" ? state.filters.category : null
+      const cartSubtotal = this.subtotal
+      const lowStockItem = this.cartItems.find((line) => line.product.stock <= 4)?.product ?? null
       const hasFilterFocus =
         Boolean(state.filters.search.trim()) ||
         state.filters.category !== "All" ||
@@ -514,34 +715,56 @@ export const useProductStore = defineStore("products", {
 
       return [
         {
+          id: "landing-welcome",
+          target: "recommendation-section",
+          tone: "assistant",
+          title: "Welcome to the collection",
+          message: "A good place to begin is with a small set of strong starting points, then narrow with category or search once something feels promising.",
+          helper: "The assistant stays lightweight and starts reacting once your browsing shows direction.",
+          actionLabel: "Show suggestions",
+          event: "landing_welcome_prompt",
+          visible: !hasFilterFocus && !recentViews && cartCount === 0,
+        },
+        {
           id: "filters-entry",
           target: "filters-bar",
           tone: "tip",
-          title: "Try narrowing the grid",
-          message: "Use search, category, and sort together to quickly cut down similar options.",
-          helper: "Filters never lock you in. Reset returns the full collection anytime.",
+          title: "Try shaping the grid",
+          message: "Search, category, and sort work well together when you want the grid to feel smaller, clearer, and easier to scan.",
+          helper: "You can always reset and widen the browse again.",
           actionLabel: "Highlight filters",
           event: "filters_prompt",
           visible: !hasFilterFocus && !recentViews,
         },
         {
+          id: "discovery-nudge",
+          target: "recommendation-section",
+          tone: "did-you-know",
+          title: "Need a softer starting point?",
+          message: "If the grid feels broad, the shortlist below can surface stronger starting points and help you avoid scanning everything equally.",
+          helper: "It is there to reduce effort, not redirect your journey.",
+          actionLabel: "Show suggestions",
+          event: "discovery_nudge_prompt",
+          visible: state.shopSignals.longScroll && !recentViews && state.comparison.length === 0,
+        },
+        {
           id: "compare-entry",
           target: "compare-button",
           tone: "tip",
-          title: "Compare side-by-side",
-          message: "Select up to two products to line up price, rating, and stock before deciding.",
-          helper: "You can save one now and add a second later.",
+          title: "Compare similar items",
+          message: "Once a few products start to feel close, placing the strongest two side-by-side can make the decision much easier.",
+          helper: "This is where the assistant shifts from discovery into confidence-building support.",
           actionLabel: "Highlight compare",
           event: "compare_prompt",
-          visible: state.comparison.length === 0 && recentViews >= 1,
+          visible: state.comparison.length === 0 && (recentViews >= 2 || this.revisitedProductIds.length >= 1),
         },
         {
           id: "compare-active",
           target: "compare-tray",
           tone: "did-you-know",
-          title: "Your comparison stays ready",
-          message: "The compare tray keeps selected products visible while you continue browsing.",
-          helper: "Add one more product to unlock the side-by-side table.",
+          title: "Your shortlist is taking shape",
+          message: "The comparison tray keeps one strong candidate ready while you look for the most useful second option.",
+          helper: "Once both are in place, the support becomes more about decision confidence than more browsing.",
           actionLabel: "Focus compare tray",
           event: "compare_tray_prompt",
           visible: state.comparison.length === 1,
@@ -550,9 +773,9 @@ export const useProductStore = defineStore("products", {
           id: "recommendations-discovery",
           target: "recommendation-section",
           tone: "did-you-know",
-          title: "Recommendations adapt quietly",
-          message: "Recommended items update from the categories and products you explore.",
-          helper: "They are suggestions only, so you can ignore them and keep browsing freely.",
+          title: "Recommendations are adapting quietly",
+          message: "The recommendation rail changes with your browsing signals, so it behaves more like timely guidance than a static product strip.",
+          helper: "You should only see it become more specific when your behaviour suggests it would help.",
           actionLabel: "Highlight recommendations",
           event: "recommendation_prompt",
           visible: Boolean(this.activeRecommendation) && recentViews >= 2,
@@ -561,20 +784,20 @@ export const useProductStore = defineStore("products", {
           id: "undecided-nudge",
           target: "recommendation-section",
           tone: "assistant",
-          title: "Need a nudge?",
-          message: "You have been exploring similar items. Comparing two or scanning recommendations may make differences clearer.",
-          helper: "This appears only when the system thinks you may be weighing options.",
+          title: "A few clearer signals might help",
+          message: "You have spent a bit of time around similar products. The current suggestions can help by surfacing stronger value, popularity, or revisit signals.",
+          helper: "This appears only when browsing suggests you may be weighing several close alternatives.",
           actionLabel: "Show decision tools",
           event: "undecided_prompt",
-          visible: recentViews >= 3 && state.comparison.length === 0,
+          visible: (recentViews >= 4 || this.revisitedProductIds.length >= 1) && state.comparison.length === 0,
         },
         {
-          id: "customization-discovery",
+          id: "add-to-cart-prompt",
           target: "product-buybox",
           tone: "tip",
-          title: "Customize before adding",
-          message: "Color, size, and quantity options let you tailor the product without leaving the page.",
-          helper: "Selections stay simple so shoppers can experiment without committing.",
+          title: "Ready when you are",
+          message: "If this feels like the right piece, choose the details you want here and add it to the bag.",
+          helper: "If you still want reassurance first, comparison remains one step away.",
           actionLabel: "Highlight options",
           event: "customization_prompt",
           visible: recentViews >= 1,
@@ -583,12 +806,27 @@ export const useProductStore = defineStore("products", {
           id: "category-confidence",
           target: "recommendation-section",
           tone: "assistant",
-          title: `Popular picks in ${activeCategory}`,
-          message: `These suggestions reflect the ${activeCategory} section you are already exploring.`,
-          helper: "They help surface strong options without changing your current browsing path.",
+          title: `Focused picks in ${activeCategory}`,
+          message: `The assistant is staying inside ${activeCategory} so the suggestions remain relevant to the direction you are already exploring.`,
+          helper: "That keeps discovery guided without becoming prescriptive.",
           actionLabel: "Highlight recommendations",
           event: "category_recommendation_prompt",
           visible: Boolean(activeCategory) && Boolean(this.activeRecommendation),
+        },
+        {
+          id: "cart-shipping-nudge",
+          target: "checkout-panel",
+          tone: "assistant",
+          title: "Almost there",
+          message: "The cart shifts into completion support here: totals, delivery choices, stock reassurance, and a clear path to finishing the mock checkout.",
+          helper: lowStockItem
+            ? `${lowStockItem.name} is running low in stock, so this is a good moment to finish if it feels right.`
+            : cartSubtotal < 180
+              ? `You are ${Math.max(0, 180 - cartSubtotal).toFixed(2)} away from free standard shipping.`
+              : "Your order already qualifies for free standard shipping.",
+          actionLabel: "Focus checkout",
+          event: "cart_checkout_prompt",
+          visible: cartCount > 0,
         },
       ]
     },
@@ -596,9 +834,13 @@ export const useProductStore = defineStore("products", {
   actions: {
     setSearch(search) {
       this.filters.search = search
+      if (search.trim()) {
+        this.shopSignals.longScroll = false
+      }
     },
     setCategory(category) {
       this.filters.category = category
+      this.shopSignals.longScroll = false
       if (category === "All") {
         this.filters.collection = "All"
         return
@@ -611,9 +853,11 @@ export const useProductStore = defineStore("products", {
     },
     setCollection(collection) {
       this.filters.collection = collection
+      this.shopSignals.longScroll = false
     },
     setSort(sort) {
       this.filters.sort = sort
+      this.shopSignals.longScroll = false
     },
     resetFilters() {
       this.filters.search = ""
@@ -716,6 +960,65 @@ export const useProductStore = defineStore("products", {
       this.comparison = []
       persistJSON(compareStorageKey, this.comparison)
       this.showToast("Comparison cleared", "neutral")
+    },
+    markShopLongScroll() {
+      if (this.shopSignals.longScroll) {
+        return
+      }
+
+      this.shopSignals = {
+        ...this.shopSignals,
+        longScroll: true,
+      }
+      this.trackInteraction("shop_long_scroll")
+    },
+    async runGuidanceAction(action) {
+      const actionMap = {
+        "highlight-filters": { route: "/shop", target: "filters-bar", highlight: "filters-bar" },
+        "focus-filters": { route: "/shop", target: "filters-bar", highlight: "filters-bar" },
+        "highlight-compare": { route: "/shop", target: "comparison-section", highlight: "compare-button" },
+        "open-comparison": {
+          route: "/shop",
+          target: this.comparison.length ? "comparison-section" : "recommendation-section",
+          highlight: this.comparison.length ? "compare-tray" : "compare-button",
+        },
+        "focus-compare": { route: "/shop", target: "comparison-section", highlight: "compare-tray" },
+        "focus-recommendations": { route: "/shop", target: "recommendation-section", highlight: "recommendation-section" },
+        "focus-categories": { route: "/shop", target: "recommendation-section", highlight: "recommendation-section" },
+        "focus-checkout": { route: "/cart", target: "checkout-panel", highlight: "checkout-panel" },
+        "go-to-checkout": { route: "/cart", target: "checkout-flow", highlight: "checkout-panel" },
+      }
+
+      const config = actionMap[action]
+      if (!config) {
+        return
+      }
+
+      if (router.currentRoute.value.path !== config.route) {
+        await router.push(config.route)
+      }
+
+      window.requestAnimationFrame(() => {
+        const element = document.getElementById(config.target)
+        element?.scrollIntoView({ behavior: "smooth", block: "start" })
+      })
+
+      if (action === "focus-categories") {
+        const firstPopular = this.categoryGroups[0]?.category ?? "All"
+        this.setCategory(firstPopular)
+        this.setCollection("All")
+      }
+
+      if (!config.highlight) {
+        return
+      }
+
+      this.setHighlightTargets([config.highlight])
+      window.setTimeout(() => {
+        if (this.guidance?.highlightTargets?.includes(config.highlight)) {
+          this.clearHighlightTargets()
+        }
+      }, 5000)
     },
     completeCheckout(payload) {
       const orderTotal = Number((payload?.total ?? this.total).toFixed(2))
@@ -921,6 +1224,10 @@ export const useProductStore = defineStore("products", {
     },
     registerProductView(productId) {
       const normalizedId = String(productId)
+      this.productViewCounts = {
+        ...this.productViewCounts,
+        [normalizedId]: (this.productViewCounts[normalizedId] ?? 0) + 1,
+      }
       this.recentlyViewed = [
         normalizedId,
         ...this.recentlyViewed.filter((id) => id !== normalizedId),
