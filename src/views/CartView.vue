@@ -219,11 +219,6 @@
       <RouterLink class="button" to="/shop">Browse products</RouterLink>
     </div>
 
-    <ContextualGuidance
-      v-if="showCartGuidance"
-      :context-id="store.activeGuidanceContext?.id"
-    />
-
     <section v-if="order" class="order-confirmation">
       <p class="eyebrow">Order confirmed</p>
       <h2>{{ order.id }}</h2>
@@ -242,7 +237,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue"
 import { useProductStore } from "../stores/productStore"
-import ContextualGuidance from "../components/ContextualGuidance.vue"
 import AssistantPanel from "../components/AssistantPanel.vue"
 import HelpPanel from "../components/HelpPanel.vue"
 
@@ -279,16 +273,6 @@ const cartSummaryText = computed(() => {
 const deliveryComplete = computed(() => Boolean(form.name && form.email && form.address))
 const paymentComplete = computed(() => Boolean(form.cardNumber && form.expiry && form.cvv))
 const checkoutReady = computed(() => deliveryComplete.value && paymentComplete.value)
-const showCartGuidance = computed(() => store.activeGuidanceContext?.id === "cart-shipping-nudge")
-
-watch(
-  () => [store.cartCount, store.subtotal, deliveryComplete.value, paymentComplete.value],
-  () => {
-    store.maybeShowContextualGuidance(["cart-shipping-nudge"])
-  },
-  { immediate: true },
-)
-
 function completeCheckout() {
   if (!checkoutReady.value) {
     store.showToast("Please complete the checkout details first", "warning")

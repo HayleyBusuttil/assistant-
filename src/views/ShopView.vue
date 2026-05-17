@@ -254,7 +254,7 @@ const showFiltersGuidance = computed(() =>
   ["landing-welcome", "filters-entry"].includes(store.activeGuidanceContext?.id ?? ""),
 )
 const showRecommendationGuidance = computed(() =>
-  ["compare-entry", "recommendations-discovery", "undecided-nudge", "category-confidence", "discovery-nudge"].includes(
+  ["compare-entry", "undecided-nudge", "category-confidence", "discovery-nudge"].includes(
     store.activeGuidanceContext?.id ?? "",
   ),
 )
@@ -291,7 +291,6 @@ watch(
       "landing-welcome",
       "discovery-nudge",
       "compare-active",
-      "recommendations-discovery",
       "undecided-nudge",
       "category-confidence",
       "filters-entry",

@@ -770,17 +770,6 @@ export const useProductStore = defineStore("products", {
           visible: state.comparison.length === 1,
         },
         {
-          id: "recommendations-discovery",
-          target: "recommendation-section",
-          tone: "did-you-know",
-          title: "Recommendations are adapting quietly",
-          message: "The recommendation rail changes with your browsing signals, so it behaves more like timely guidance than a static product strip.",
-          helper: "You should only see it become more specific when your behaviour suggests it would help.",
-          actionLabel: "Highlight recommendations",
-          event: "recommendation_prompt",
-          visible: Boolean(this.activeRecommendation) && recentViews >= 2,
-        },
-        {
           id: "undecided-nudge",
           target: "recommendation-section",
           tone: "assistant",
@@ -796,7 +785,7 @@ export const useProductStore = defineStore("products", {
           target: "product-buybox",
           tone: "tip",
           title: "Ready when you are",
-          message: "If this feels like the right piece, choose the details you want here and add it to the bag.",
+          message: "Review the product details here, choose the options you want, and add it to your cart when you are ready.",
           helper: "If you still want reassurance first, comparison remains one step away.",
           actionLabel: "Highlight options",
           event: "customization_prompt",
@@ -812,21 +801,6 @@ export const useProductStore = defineStore("products", {
           actionLabel: "Highlight recommendations",
           event: "category_recommendation_prompt",
           visible: Boolean(activeCategory) && Boolean(this.activeRecommendation),
-        },
-        {
-          id: "cart-shipping-nudge",
-          target: "checkout-panel",
-          tone: "assistant",
-          title: "Almost there",
-          message: "The cart shifts into completion support here: totals, delivery choices, stock reassurance, and a clear path to finishing the mock checkout.",
-          helper: lowStockItem
-            ? `${lowStockItem.name} is running low in stock, so this is a good moment to finish if it feels right.`
-            : cartSubtotal < 180
-              ? `You are ${Math.max(0, 180 - cartSubtotal).toFixed(2)} away from free standard shipping.`
-              : "Your order already qualifies for free standard shipping.",
-          actionLabel: "Focus checkout",
-          event: "cart_checkout_prompt",
-          visible: cartCount > 0,
         },
       ]
     },

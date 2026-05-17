@@ -3,7 +3,7 @@
     <header class="assistant-header">
       <div>
         <p class="eyebrow">Assistant</p>
-        <h3>Optional guidance</h3>
+        <h3>{{ panelTitle }}</h3>
       </div>
       <button class="text-button" type="button" @click="closePanel">Close</button>
     </header>
@@ -34,7 +34,45 @@ import RecommendationCard from "./RecommendationCard.vue"
 
 const store = useProductStore()
 const route = useRoute()
-const message = computed(() => store.shopAssistantMessage)
+const panelTitle = computed(() => {
+  if (route.path === "/") {
+    return "Shopping guidance"
+  }
+
+  if (route.path === "/shop") {
+    return "Browse with confidence"
+  }
+
+  if (route.path.startsWith("/product/")) {
+    return "Choose your options"
+  }
+
+  if (route.path === "/cart") {
+    return "Complete your checkout"
+  }
+
+  return "Shopping guidance"
+})
+
+const message = computed(() => {
+  if (route.path === "/") {
+    return "Start here to explore recommended products, narrow the selection with filters, and compare items before opening a product."
+  }
+
+  if (route.path === "/shop") {
+    return "Use search, filters, and comparison tools to narrow the product list and find the items that fit your needs more quickly."
+  }
+
+  if (route.path.startsWith("/product/")) {
+    return "Review the product details, choose your color, size, and quantity, then add the item to your cart when you are ready."
+  }
+
+  if (route.path === "/cart") {
+    return "Review your items, confirm quantities, complete the delivery and payment fields, and move through checkout to place the order."
+  }
+
+  return store.shopAssistantMessage
+})
 const assistantCards = computed(() => {
   if (route.path === "/shop") {
     const cards = []
