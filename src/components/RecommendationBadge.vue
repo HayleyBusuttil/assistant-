@@ -15,11 +15,11 @@ const props = defineProps({
   display: inline-block;
   padding: 6px 10px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(92,161,143,0.12), rgba(35,45,68,0.06));
-  color: var(--accent);
+  background: rgba(255, 255, 255, 0.94);
+  color: #111111;
   font-weight: 700;
   font-size: 0.8rem;
-  border: 1px solid rgba(92,161,143,0.18);
-  box-shadow: 0 6px 18px rgba(35,45,68,0.04);
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.12);
 }
 </style>

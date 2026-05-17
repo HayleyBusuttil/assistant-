@@ -119,6 +119,72 @@
       </article>
     </section>
 
+    <section
+      v-if="store.comparisonProducts.length"
+      id="comparison-section"
+      ref="comparisonSection"
+      class="compare-tray"
+      :class="{ 'highlighted-guidance': store.guidance?.highlightTargets?.includes('compare-tray') }"
+    >
+      <div>
+        <p class="eyebrow">Compare</p>
+        <h2>{{ store.comparisonProducts.length }}/2 products selected</h2>
+      </div>
+
+      <div class="compare-items">
+        <RouterLink
+          v-for="item in store.comparisonProducts"
+          :key="item.id"
+          :to="`/product/${item.id}`"
+          class="compare-mini-card"
+        >
+          <img :src="item.image" :alt="item.name" loading="lazy" decoding="async" />
+          <div class="compare-mini-copy">
+            <strong>{{ item.name }}</strong>
+            <span>{{ item.category }} · €{{ item.price }}</span>
+          </div>
+          <div class="compare-mini-actions">
+            <button type="button" class="button-ghost button-sm" @click.stop.prevent="store.addToCart(item.id)">
+              Add to cart
+            </button>
+            <button type="button" class="button-ghost button-sm" @click.stop.prevent="store.toggleComparison(item.id)">
+              Remove
+            </button>
+          </div>
+        </RouterLink>
+      </div>
+
+      <div v-if="store.comparisonProducts.length === 2" class="comparison-table">
+        <div class="comparison-row header">
+          <span>Feature</span>
+          <RouterLink
+            v-for="item in store.comparisonProducts"
+            :key="item.id"
+            :to="`/product/${item.id}`"
+            class="comparison-product-link"
+          >
+            {{ item.name }}
+          </RouterLink>
+        </div>
+        <div class="comparison-row">
+          <span>Price</span>
+          <strong v-for="item in store.comparisonProducts" :key="item.id">€{{ item.price }}</strong>
+        </div>
+        <div class="comparison-row">
+          <span>Rating</span>
+          <strong v-for="item in store.comparisonProducts" :key="item.id">{{ item.rating.toFixed(1) }}/5</strong>
+        </div>
+        <div class="comparison-row">
+          <span>Stock</span>
+          <strong v-for="item in store.comparisonProducts" :key="item.id">{{ item.stock }} left</strong>
+        </div>
+      </div>
+
+      <button type="button" class="button-soft button-sm" @click="store.clearComparison()">
+        Clear comparison
+      </button>
+    </section>
+
     <section id="similar-products-section">
       <RecommendationSection
       v-if="relatedProducts.length"
@@ -152,7 +218,7 @@
       eyebrow="Users also viewed"
       title="Recently explored alongside this product"
       helper-text="A lightweight trail based on browsing behaviour, not a required next step."
-      product-label="Browsing trail"
+      product-label="History"
       :products="alsoViewedProducts"
       :comparison="store.comparison"
       @quick-add="store.addToCart"
@@ -173,7 +239,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { useProductStore } from "../stores/productStore"
 import HelpPanel from "../components/HelpPanel.vue"
@@ -189,6 +255,7 @@ const sizes = ["XS", "S", "M", "L", "XL"]
 const quantity = ref(1)
 const selectedColor = ref("")
 const selectedSize = ref("M")
+const comparisonSection = ref(null)
 
 watch(
   product,
@@ -208,6 +275,16 @@ watch(
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => store.comparison.length,
+  async (length, previousLength) => {
+    if (length === 2 && previousLength !== 2) {
+      await nextTick()
+      comparisonSection.value?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  },
 )
 
 const relatedProducts = computed(() =>

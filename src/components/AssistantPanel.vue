@@ -113,18 +113,6 @@ const assistantCards = computed(() => {
       })
     }
 
-    const productId = String(route.params.id ?? "")
-    const inCart = store.cart.some((line) => line.productId === productId)
-    if (inCart && document.getElementById("complete-look-section")) {
-      cards.push({
-        title: "Complete the look",
-        description: "Discover matching items for your selection.",
-        icon: "pair",
-        ctaLabel: "View matching items",
-        action: "assistant-complete-look",
-      })
-    }
-
     return cards
   }
 
@@ -152,7 +140,6 @@ function handleCard(action) {
     "assistant-filters": "filters-bar",
     "assistant-compare": store.comparisonProducts.length ? "comparison-section" : "recommendation-section",
     "assistant-similar-products": "similar-products-section",
-    "assistant-complete-look": "complete-look-section",
     "assistant-checkout": "checkout-flow",
   }
 
@@ -160,7 +147,6 @@ function handleCard(action) {
     "assistant-filters": "filters-bar",
     "assistant-compare": store.comparisonProducts.length ? "compare-tray" : "compare-button",
     "assistant-similar-products": "recommendation-section",
-    "assistant-complete-look": "recommendation-section",
     "assistant-checkout": "checkout-panel",
   }
 
